@@ -15,6 +15,8 @@ import (
 type Balance interface {
 	AddDeposit(ctx context.Context, accountID int, transaction models.Transaction) error
 	GetBalance(ctx context.Context, accountID int) (float64, error)
+	WithdrawMoney(ctx context.Context, accountID int, transaction models.Transaction) error
+	TransferMoney(ctx context.Context, accountID int, transaction models.TransferTransaction) error
 }
 
 func NewRouter(log *logrus.Logger, balance Balance) chi.Router {
@@ -28,6 +30,8 @@ func NewRouter(log *logrus.Logger, balance Balance) chi.Router {
 		r.Get("/test", handler.Test)
 		r.Get("/getBalance", handler.GetBalance)
 		r.Post("/addDeposit", handler.DepositMoneyToWallet)
+		r.Post("/withdrawMoney", handler.WithdrawMoneyFromWallet)
+		r.Post("/transferMoney", handler.TransferMoney)
 	})
 
 	return r

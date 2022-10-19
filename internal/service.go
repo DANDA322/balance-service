@@ -11,6 +11,8 @@ import (
 type Database interface {
 	GetWallet(ctx context.Context, accountID int) (*models.Wallet, error)
 	UpsertDepositToWallet(ctx context.Context, accountID int, transaction models.Transaction) error
+	WithdrawMoneyFromWallet(ctx context.Context, ownerID int, transaction models.Transaction) error
+	TransferMoney(ctx context.Context, accountID int, transaction models.TransferTransaction) error
 }
 
 type App struct {
@@ -28,6 +30,20 @@ func NewApp(log *logrus.Logger, db Database) *App {
 func (a *App) AddDeposit(ctx context.Context, accountID int, transaction models.Transaction) error {
 	if err := a.db.UpsertDepositToWallet(ctx, accountID, transaction); err != nil {
 		return fmt.Errorf("unable to upsert deposit: %w", err)
+	}
+	return nil
+}
+
+func (a *App) WithdrawMoney(ctx context.Context, accountID int, transaction models.Transaction) error {
+	if err := a.db.WithdrawMoneyFromWallet(ctx, accountID, transaction); err != nil {
+		return fmt.Errorf("unable to withdraw money: %w", err)
+	}
+	return nil
+}
+
+func (a *App) TransferMoney(ctx context.Context, accountID int, transaction models.TransferTransaction) error {
+	if err := a.db.TransferMoney(ctx, accountID, transaction); err != nil {
+		return fmt.Errorf("unable to transfer mony: %w", err)
 	}
 	return nil
 }
