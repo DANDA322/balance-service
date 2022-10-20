@@ -128,3 +128,61 @@ func (h *handler) TransferMoney(w http.ResponseWriter, r *http.Request) { //noli
 	}
 	h.writeJSONResponse(w, map[string]interface{}{"response": "OK"})
 }
+
+func (h *handler) ReserveMoney(w http.ResponseWriter, r *http.Request) { //nolint:dupl
+	transaction := models.ReserveTransaction{}
+	if err := json.NewDecoder(r.Body).Decode(&transaction); err != nil {
+		h.writeErrResponse(w, http.StatusBadRequest, "Can't decode json")
+		h.log.Info(err)
+		return
+	}
+	ctx := r.Context()
+	sessionInfo := ctx.Value(SessionKey).(models.SessionInfo)
+	err := h.balance.ReserveMoney(ctx, sessionInfo.AccountID, transaction)
+	switch {
+	case err == nil:
+	case errors.Is(err, models.ErrWalletNotFound):
+		h.writeErrResponse(w, http.StatusNotFound, models.ErrWalletNotFound.Error())
+		return
+	case errors.Is(err, models.ErrNotEnoughMoney):
+		h.writeErrResponse(w, http.StatusConflict, models.ErrNotEnoughMoney.Error())
+		return
+	default:
+		h.log.Errorf("Error reserve money: %v", err)
+		h.writeErrResponse(w, http.StatusInternalServerError, fmt.Sprintf("Internal server error: %v", err))
+		return
+	}
+	h.writeJSONResponse(w, map[string]interface{}{"response": "OK"})
+}
+
+func (h *handler) RecognizeMoney(w http.ResponseWriter, r *http.Request) {
+	transaction := models.ReserveTransaction{}
+	if err := json.NewDecoder(r.Body).Decode(&transaction); err != nil {
+		h.writeErrResponse(w, http.StatusBadRequest, "Can't decode json")
+		h.log.Info(err)
+		return
+	}
+	ctx := r.Context()
+	sessionInfo := ctx.Value(SessionKey).(models.SessionInfo)
+	err := h.balance.RecognizeMoney(ctx, sessionInfo.AccountID, transaction)
+	switch {
+	case err == nil:
+	case errors.Is(err, models.ErrWalletNotFound):
+		h.writeErrResponse(w, http.StatusNotFound, models.ErrWalletNotFound.Error())
+		return
+	case errors.Is(err, models.ErrNotEnoughReservedMoney):
+		h.writeErrResponse(w, http.StatusConflict, models.ErrNotEnoughReservedMoney.Error())
+		return
+	case errors.Is(err, models.ErrOrderNotFound):
+		h.writeErrResponse(w, http.StatusNotFound, models.ErrOrderNotFound.Error())
+		return
+	case errors.Is(err, models.ErrServiceNotFound):
+		h.writeErrResponse(w, http.StatusNotFound, models.ErrServiceNotFound.Error())
+		return
+	default:
+		h.log.Errorf("Error recognize money: %v", err)
+		h.writeErrResponse(w, http.StatusInternalServerError, fmt.Sprintf("Internal server error: %v", err))
+		return
+	}
+	h.writeJSONResponse(w, map[string]interface{}{"response": "OK"})
+}

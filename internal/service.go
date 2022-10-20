@@ -13,6 +13,8 @@ type Database interface {
 	UpsertDepositToWallet(ctx context.Context, accountID int, transaction models.Transaction) error
 	WithdrawMoneyFromWallet(ctx context.Context, ownerID int, transaction models.Transaction) error
 	TransferMoney(ctx context.Context, accountID int, transaction models.TransferTransaction) error
+	ReserveMoneyFromWallet(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
+	RecognizeMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
 }
 
 type App struct {
@@ -54,4 +56,18 @@ func (a *App) GetBalance(ctx context.Context, accountID int) (float64, error) {
 		return 0, fmt.Errorf("unable to get balance: %w", err)
 	}
 	return wallet.Balance, nil
+}
+
+func (a *App) ReserveMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error {
+	if err := a.db.ReserveMoneyFromWallet(ctx, accountID, transaction); err != nil {
+		return fmt.Errorf("unable to reserve money: %w", err)
+	}
+	return nil
+}
+
+func (a *App) RecognizeMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error {
+	if err := a.db.RecognizeMoney(ctx, accountID, transaction); err != nil {
+		return fmt.Errorf("unable to recognize money: %w", err)
+	}
+	return nil
 }
