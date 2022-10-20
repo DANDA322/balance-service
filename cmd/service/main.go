@@ -32,7 +32,7 @@ func main() {
 	ctx := context.Background()
 	store, err := pgstore.GetPGStore(ctx, log, pgDSN)
 	if err != nil {
-		log.Panicf("failed to get pg connection: #{err}")
+		log.Panicf("failed to get pg connection: %v", err)
 	}
 	service := internal.NewApp(log, store)
 	router := rest.NewRouter(log, service)

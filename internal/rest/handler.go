@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/DANDA322/balance-service/internal/models"
 	"github.com/sirupsen/logrus"
@@ -185,4 +187,94 @@ func (h *handler) RecognizeMoney(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.writeJSONResponse(w, map[string]interface{}{"response": "OK"})
+}
+
+func (h *handler) GetWalletTransactions(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	sessionInfo := ctx.Value(SessionKey).(models.SessionInfo)
+	from, err := h.parseTime(r.URL.Query().Get("from"))
+	if err != nil {
+		h.writeErrResponse(w, http.StatusBadRequest, "Can't parse time")
+		h.log.Info(err)
+		return
+	}
+	to, err := h.parseTime(r.URL.Query().Get("to"))
+	if err != nil {
+		h.writeErrResponse(w, http.StatusBadRequest, "Can't parse time")
+		h.log.Info(err)
+		return
+	}
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil {
+		h.writeErrResponse(w, http.StatusInternalServerError, err)
+		return
+	}
+	offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
+	if err != nil {
+		h.writeErrResponse(w, http.StatusBadRequest, err)
+		return
+	}
+	sorting := r.URL.Query().Get("sorting")
+	descending := r.URL.Query().Get("descending")
+	var transactions []models.TransactionFullInfo
+	queryParams := models.TransactionsQueryParams{
+		From:       from,
+		To:         to,
+		Limit:      limit,
+		Offset:     offset,
+		Sorting:    sorting,
+		Descending: descending,
+	}
+	h.log.Info(queryParams)
+	transactions, err = h.balance.GetWalletTransaction(ctx, sessionInfo.AccountID, &queryParams)
+	switch {
+	case err == nil:
+	case errors.Is(err, models.ErrServiceNotFound):
+		h.writeErrResponse(w, http.StatusNotFound, models.ErrWalletNotFound.Error())
+		return
+	default:
+		h.log.Errorf("Error get wallet transactions: %v", err)
+		h.writeErrResponse(w, http.StatusInternalServerError, fmt.Sprintf("Internal server error: %v", err))
+		return
+	}
+	h.writeJSONResponse(w, transactions)
+}
+
+func (h *handler) CancelReserve(w http.ResponseWriter, r *http.Request) {
+	transaction := models.ReserveTransaction{}
+	if err := json.NewDecoder(r.Body).Decode(&transaction); err != nil {
+		h.writeErrResponse(w, http.StatusBadRequest, "Can't decode json")
+		h.log.Info(err)
+		return
+	}
+	ctx := r.Context()
+	sessionInfo := ctx.Value(SessionKey).(models.SessionInfo)
+	err := h.balance.CancelReserve(ctx, sessionInfo.AccountID, transaction)
+	switch {
+	case err == nil:
+	case errors.Is(err, models.ErrWalletNotFound):
+		h.writeErrResponse(w, http.StatusNotFound, models.ErrWalletNotFound.Error())
+		return
+	case errors.Is(err, models.ErrNotEnoughReservedMoney):
+		h.writeErrResponse(w, http.StatusConflict, models.ErrNotEnoughReservedMoney.Error())
+		return
+	case errors.Is(err, models.ErrOrderNotFound):
+		h.writeErrResponse(w, http.StatusNotFound, models.ErrOrderNotFound.Error())
+		return
+	default:
+		h.log.Errorf("Error cancel reserve: %v", err)
+		h.writeErrResponse(w, http.StatusInternalServerError, fmt.Sprintf("Internal server error: %v", err))
+		return
+	}
+	h.writeJSONResponse(w, map[string]interface{}{"response": "OK"})
+}
+
+const dateTimeFmt = "2006-01-02T15:04:05Z"
+
+func (h *handler) parseTime(s string) (time.Time, error) {
+	t, err := time.Parse(dateTimeFmt, s)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("could not parse time: %w", err)
+	}
+	return t, err
 }

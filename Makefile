@@ -7,3 +7,6 @@ up:
 
 down:
 	docker_compose down
+
+test: up
+	go test -failfast -v ./...

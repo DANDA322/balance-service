@@ -15,6 +15,9 @@ type Database interface {
 	TransferMoney(ctx context.Context, accountID int, transaction models.TransferTransaction) error
 	ReserveMoneyFromWallet(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
 	RecognizeMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
+	GetWalletTransactions(ctx context.Context, accountID int,
+		queryParams *models.TransactionsQueryParams) ([]models.TransactionFullInfo, error)
+	CancelReserve(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
 }
 
 type App struct {
@@ -68,6 +71,22 @@ func (a *App) ReserveMoney(ctx context.Context, accountID int, transaction model
 func (a *App) RecognizeMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error {
 	if err := a.db.RecognizeMoney(ctx, accountID, transaction); err != nil {
 		return fmt.Errorf("unable to recognize money: %w", err)
+	}
+	return nil
+}
+
+func (a *App) GetWalletTransaction(ctx context.Context, accountID int,
+	queryParams *models.TransactionsQueryParams) ([]models.TransactionFullInfo, error) {
+	transactions, err := a.db.GetWalletTransactions(ctx, accountID, queryParams)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get transactions: %w", err)
+	}
+	return transactions, nil
+}
+
+func (a *App) CancelReserve(ctx context.Context, accountID int, transaction models.ReserveTransaction) error {
+	if err := a.db.CancelReserve(ctx, accountID, transaction); err != nil {
+		return fmt.Errorf("unable to cancel reserve")
 	}
 	return nil
 }
