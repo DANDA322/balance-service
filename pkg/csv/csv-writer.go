@@ -3,9 +3,10 @@ package csv
 import (
 	"encoding/csv"
 	"fmt"
-	"github.com/sirupsen/logrus"
 	"os"
 	"unicode/utf8"
+
+	"github.com/sirupsen/logrus"
 )
 
 type WriterCSV struct {
@@ -18,7 +19,7 @@ func (c *WriterCSV) GetReport(data map[string]float64) (*os.File, error) {
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
-			logrus.Error("err closing file: %v", err)
+			logrus.Errorf("err closing file: %v", err)
 		}
 	}()
 

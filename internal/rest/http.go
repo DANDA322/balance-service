@@ -39,13 +39,13 @@ func NewRouter(log *logrus.Logger, balance Balance) chi.Router {
 		r.Use(handler.auth)
 		r.Get("/getBalance", handler.GetBalance)
 		r.Get("/getTransactions", handler.GetWalletTransactions)
+		r.Get("/getReport", handler.GetReport)
 		r.Post("/addDeposit", handler.DepositMoneyToWallet)
 		r.Post("/withdrawMoney", handler.WithdrawMoneyFromWallet)
 		r.Post("/transferMoney", handler.TransferMoney)
 		r.Post("/reserveMoney", handler.ReserveMoney)
 		r.Post("/applyReserve", handler.ApplyReservedMoney)
 		r.Post("/cancelReserve", handler.CancelReserve)
-		r.Get("/getReport", handler.GetReport)
 	})
 
 	return r
@@ -68,7 +68,10 @@ func (h *handler) writeCSVResponse(w http.ResponseWriter, file *os.File) {
 	if err != nil {
 		h.writeErrResponse(w, http.StatusInternalServerError, fmt.Sprintf("Cannot open file %v", err))
 	}
-	w.Write(fileResponse)
+	_, err = w.Write(fileResponse)
+	if err != nil {
+		h.log.Errorf("err to write report: %v", err)
+	}
 }
 
 func (h *handler) writeErrResponse(w http.ResponseWriter, code int, err interface{}) {

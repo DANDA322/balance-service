@@ -24,7 +24,7 @@ const addr = ":4444"
 
 var (
 	verbose = lookupEnv("VERBOSE", "true")
-	pgDSN   = lookupEnv("PG_DSN", "postgres://postgres:secret@localhost:5432/postgres")
+	pgDSN   = lookupEnv("PG_DSN", "postgres://postgres:secret@localhost:5433/postgres")
 )
 
 func main() {

@@ -37,7 +37,7 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	s.log = logging.GetLogger("true")
 	ctx := context.Background()
 	var err error
-	s.store, err = pgstore.GetPGStore(ctx, s.log, "postgres://postgres:secret@localhost:5432/postgres")
+	s.store, err = pgstore.GetPGStore(ctx, s.log, "postgres://postgres:secret@localhost:5433/postgres")
 	require.NoError(s.T(), err)
 	err = s.store.Migrate(migrate.Down)
 	require.NoError(s.T(), err)

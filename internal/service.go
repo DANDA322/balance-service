@@ -3,11 +3,11 @@ package internal
 import (
 	"context"
 	"fmt"
-	"github.com/DANDA322/balance-service/pkg/csv"
 	"os"
 	"time"
 
 	"github.com/DANDA322/balance-service/internal/models"
+	"github.com/DANDA322/balance-service/pkg/csv"
 	"github.com/sirupsen/logrus"
 )
 
