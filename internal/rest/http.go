@@ -18,7 +18,7 @@ type Balance interface {
 	WithdrawMoney(ctx context.Context, accountID int, transaction models.Transaction) error
 	TransferMoney(ctx context.Context, accountID int, transaction models.TransferTransaction) error
 	ReserveMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
-	RecognizeMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
+	ApplyReservedMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
 	GetWalletTransaction(ctx context.Context, accountID int,
 		queryParams *models.TransactionsQueryParams) ([]models.TransactionFullInfo, error)
 	CancelReserve(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
@@ -32,14 +32,13 @@ func NewRouter(log *logrus.Logger, balance Balance) chi.Router {
 	r.NotFound(notFoundHandler)
 	r.Route("/wallet", func(r chi.Router) {
 		r.Use(handler.auth)
-		r.Get("/test", handler.Test)
 		r.Get("/getBalance", handler.GetBalance)
 		r.Get("/getTransactions", handler.GetWalletTransactions)
 		r.Post("/addDeposit", handler.DepositMoneyToWallet)
 		r.Post("/withdrawMoney", handler.WithdrawMoneyFromWallet)
 		r.Post("/transferMoney", handler.TransferMoney)
 		r.Post("/reserveMoney", handler.ReserveMoney)
-		r.Post("/recognizeMoney", handler.RecognizeMoney)
+		r.Post("/applyReserve", handler.ApplyReservedMoney)
 		r.Post("/cancelReserve", handler.CancelReserve)
 	})
 

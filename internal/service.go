@@ -14,7 +14,7 @@ type Database interface {
 	WithdrawMoneyFromWallet(ctx context.Context, ownerID int, transaction models.Transaction) error
 	TransferMoney(ctx context.Context, accountID int, transaction models.TransferTransaction) error
 	ReserveMoneyFromWallet(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
-	RecognizeMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
+	ApplyReservedMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
 	GetWalletTransactions(ctx context.Context, accountID int,
 		queryParams *models.TransactionsQueryParams) ([]models.TransactionFullInfo, error)
 	CancelReserve(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
@@ -68,8 +68,8 @@ func (a *App) ReserveMoney(ctx context.Context, accountID int, transaction model
 	return nil
 }
 
-func (a *App) RecognizeMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error {
-	if err := a.db.RecognizeMoney(ctx, accountID, transaction); err != nil {
+func (a *App) ApplyReservedMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error {
+	if err := a.db.ApplyReservedMoney(ctx, accountID, transaction); err != nil {
 		return fmt.Errorf("unable to recognize money: %w", err)
 	}
 	return nil

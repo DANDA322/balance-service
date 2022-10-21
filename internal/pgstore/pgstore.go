@@ -222,7 +222,7 @@ func (db *DB) ReserveMoneyFromWallet(ctx context.Context, accountID int, transac
 	return nil
 }
 
-func (db *DB) RecognizeMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error {
+func (db *DB) ApplyReservedMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error {
 	tx, err := db.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("err recognize money: %w", err)

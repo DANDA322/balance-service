@@ -38,6 +38,10 @@ CREATE TABLE reserved_funds
     updated_at timestamp with time zone DEFAULT NOW() NOT NULL
 );
 
+INSERT INTO services (title)
+VALUES ('Услуга');
+
+
 -- +migrate Down
 DROP TABLE reserved_funds CASCADE;
 DROP TABLE transaction CASCADE;

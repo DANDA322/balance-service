@@ -31,14 +31,6 @@ func newHandler(log *logrus.Logger, balance Balance) *handler {
 	}
 }
 
-func (h *handler) Test(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	sessionInfo := ctx.Value(SessionKey).(models.SessionInfo)
-	accountID := sessionInfo.AccountID
-	h.log.Info(accountID)
-	h.writeJSONResponse(w, accountID)
-}
-
 func (h *handler) GetBalance(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	sessionInfo := ctx.Value(SessionKey).(models.SessionInfo)
@@ -157,7 +149,7 @@ func (h *handler) ReserveMoney(w http.ResponseWriter, r *http.Request) { //nolin
 	h.writeJSONResponse(w, map[string]interface{}{"response": "OK"})
 }
 
-func (h *handler) RecognizeMoney(w http.ResponseWriter, r *http.Request) {
+func (h *handler) ApplyReservedMoney(w http.ResponseWriter, r *http.Request) {
 	transaction := models.ReserveTransaction{}
 	if err := json.NewDecoder(r.Body).Decode(&transaction); err != nil {
 		h.writeErrResponse(w, http.StatusBadRequest, "Can't decode json")
@@ -166,7 +158,7 @@ func (h *handler) RecognizeMoney(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	sessionInfo := ctx.Value(SessionKey).(models.SessionInfo)
-	err := h.balance.RecognizeMoney(ctx, sessionInfo.AccountID, transaction)
+	err := h.balance.ApplyReservedMoney(ctx, sessionInfo.AccountID, transaction)
 	switch {
 	case err == nil:
 	case errors.Is(err, models.ErrWalletNotFound):
@@ -229,7 +221,7 @@ func (h *handler) GetWalletTransactions(w http.ResponseWriter, r *http.Request) 
 	transactions, err = h.balance.GetWalletTransaction(ctx, sessionInfo.AccountID, &queryParams)
 	switch {
 	case err == nil:
-	case errors.Is(err, models.ErrServiceNotFound):
+	case errors.Is(err, models.ErrWalletNotFound):
 		h.writeErrResponse(w, http.StatusNotFound, models.ErrWalletNotFound.Error())
 		return
 	default:
