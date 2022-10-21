@@ -14,6 +14,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const (
+	dateTimeFmt1 = "2006-01-02T15:04:05Z"
+	dateTimeFmt2 = "2006-01"
+)
+
 //go:embed public.pub
 var publicSigningKey []byte
 
@@ -184,13 +189,13 @@ func (h *handler) ApplyReservedMoney(w http.ResponseWriter, r *http.Request) {
 func (h *handler) GetWalletTransactions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	sessionInfo := ctx.Value(SessionKey).(models.SessionInfo)
-	from, err := h.parseTime(r.URL.Query().Get("from"))
+	from, err := h.parseTime(r.URL.Query().Get("from"), dateTimeFmt1)
 	if err != nil {
 		h.writeErrResponse(w, http.StatusBadRequest, "Can't parse time")
 		h.log.Info(err)
 		return
 	}
-	to, err := h.parseTime(r.URL.Query().Get("to"))
+	to, err := h.parseTime(r.URL.Query().Get("to"), dateTimeFmt1)
 	if err != nil {
 		h.writeErrResponse(w, http.StatusBadRequest, "Can't parse time")
 		h.log.Info(err)
@@ -261,10 +266,23 @@ func (h *handler) CancelReserve(w http.ResponseWriter, r *http.Request) {
 	h.writeJSONResponse(w, map[string]interface{}{"response": "OK"})
 }
 
-const dateTimeFmt = "2006-01-02T15:04:05Z"
+func (h *handler) GetReport(w http.ResponseWriter, r *http.Request) {
+	month, err := h.parseTime(r.URL.Query().Get("month"), dateTimeFmt2)
+	if err != nil {
+		h.writeErrResponse(w, http.StatusBadRequest, "Can't parse time")
+		h.log.Info(err)
+		return
+	}
+	ctx := r.Context()
+	file, err := h.balance.GetReport(ctx, month)
+	if err != nil {
+		h.writeErrResponse(w, http.StatusInternalServerError, fmt.Sprintf("Internal server error: %v", err))
+	}
+	h.writeCSVResponse(w, file)
+}
 
-func (h *handler) parseTime(s string) (time.Time, error) {
-	t, err := time.Parse(dateTimeFmt, s)
+func (h *handler) parseTime(s, layout string) (time.Time, error) {
+	t, err := time.Parse(layout, s)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("could not parse time: %w", err)
 	}

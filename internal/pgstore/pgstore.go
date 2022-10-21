@@ -321,6 +321,34 @@ func (db *DB) GetWalletTransactions(ctx context.Context, accountID int,
 	return transactions, nil
 }
 
+func (db *DB) GetReport(ctx context.Context, month time.Time) (map[string]float64, error) {
+	query := `
+	SELECT title, amount
+	FROM reserved_funds
+	INNER JOIN services s on s.id = reserved_funds.service_id
+	WHERE status = $1 AND 
+	    updated_at BETWEEN $2 AND $3`
+	status := "Completed"
+	rows, err := db.db.QueryxContext(ctx, query, status, month, month.AddDate(0, 1, 0))
+	if err != nil {
+		return nil, fmt.Errorf("err executing [GetReport]: %w", err)
+	}
+	defer func() {
+		if err = rows.Close(); err != nil {
+			db.log.Warnf("err closing rows: %v", err)
+		}
+	}()
+	services := make(map[string]float64)
+	var service models.Service
+	for rows.Next() {
+		if err = rows.StructScan(&service); err != nil {
+			return services, err
+		}
+		services[service.Title] += service.Amount
+	}
+	return services, nil
+}
+
 func (db *DB) reserveMoney(ctx context.Context, tx *sql.Tx, walletID int, amount float64) error {
 	query := `
 	UPDATE wallet 

@@ -3,6 +3,9 @@ package internal
 import (
 	"context"
 	"fmt"
+	"github.com/DANDA322/balance-service/pkg/csv"
+	"os"
+	"time"
 
 	"github.com/DANDA322/balance-service/internal/models"
 	"github.com/sirupsen/logrus"
@@ -18,6 +21,7 @@ type Database interface {
 	GetWalletTransactions(ctx context.Context, accountID int,
 		queryParams *models.TransactionsQueryParams) ([]models.TransactionFullInfo, error)
 	CancelReserve(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
+	GetReport(ctx context.Context, month time.Time) (map[string]float64, error)
 }
 
 type App struct {
@@ -89,4 +93,17 @@ func (a *App) CancelReserve(ctx context.Context, accountID int, transaction mode
 		return fmt.Errorf("unable to cancel reserve")
 	}
 	return nil
+}
+
+func (a *App) GetReport(ctx context.Context, month time.Time) (*os.File, error) {
+	services, err := a.db.GetReport(ctx, month)
+	if err != nil {
+		return nil, fmt.Errorf("unable get data for report: %w", err)
+	}
+	writerCSV := csv.WriterCSV{}
+	file, err := writerCSV.GetReport(services)
+	if err != nil {
+		return nil, fmt.Errorf("unable get report: %w", err)
+	}
+	return file, nil
 }

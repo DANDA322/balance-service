@@ -3,7 +3,11 @@ package rest
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/DANDA322/balance-service/internal/models"
 	"github.com/go-chi/chi/v5"
@@ -22,6 +26,7 @@ type Balance interface {
 	GetWalletTransaction(ctx context.Context, accountID int,
 		queryParams *models.TransactionsQueryParams) ([]models.TransactionFullInfo, error)
 	CancelReserve(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
+	GetReport(ctx context.Context, month time.Time) (*os.File, error)
 }
 
 func NewRouter(log *logrus.Logger, balance Balance) chi.Router {
@@ -40,6 +45,7 @@ func NewRouter(log *logrus.Logger, balance Balance) chi.Router {
 		r.Post("/reserveMoney", handler.ReserveMoney)
 		r.Post("/applyReserve", handler.ApplyReservedMoney)
 		r.Post("/cancelReserve", handler.CancelReserve)
+		r.Get("/getReport", handler.GetReport)
 	})
 
 	return r
@@ -54,6 +60,15 @@ func (h *handler) writeJSONResponse(w http.ResponseWriter, data interface{}) {
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		h.log.Errorf("unable to encode data %v", err)
 	}
+}
+
+func (h *handler) writeCSVResponse(w http.ResponseWriter, file *os.File) {
+	w.Header().Set("Content-Type", "text/csv")
+	fileResponse, err := ioutil.ReadFile(file.Name())
+	if err != nil {
+		h.writeErrResponse(w, http.StatusInternalServerError, fmt.Sprintf("Cannot open file %v", err))
+	}
+	w.Write(fileResponse)
 }
 
 func (h *handler) writeErrResponse(w http.ResponseWriter, code int, err interface{}) {
