@@ -189,7 +189,7 @@ func (db *DB) TransferMoney(ctx context.Context, accountID int, transaction mode
 	return nil
 }
 
-func (db *DB) ReserveMoneyFromWallet(ctx context.Context, accountID int, transaction models.ReserveTransaction) error {
+func (db *DB) ReserveMoneyFromWallet(ctx context.Context, transaction models.ReserveTransaction) error {
 	tx, err := db.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("err reserve money: %w", err)
@@ -199,7 +199,7 @@ func (db *DB) ReserveMoneyFromWallet(ctx context.Context, accountID int, transac
 			db.log.Error("err rolling back reserve transaction")
 		}
 	}()
-	wallet, err := db.checkBalance(ctx, tx, accountID, transaction.Amount)
+	wallet, err := db.checkBalance(ctx, tx, transaction.AccountID, transaction.Amount)
 	if err != nil {
 		return err
 	}
@@ -211,7 +211,7 @@ func (db *DB) ReserveMoneyFromWallet(ctx context.Context, accountID int, transac
 	if err != nil {
 		return err
 	}
-	err = db.insertReservedFunds(ctx, tx, accountID, transaction)
+	err = db.insertReservedFunds(ctx, tx, transaction.AccountID, transaction)
 	if err != nil {
 		return err
 	}
@@ -222,7 +222,7 @@ func (db *DB) ReserveMoneyFromWallet(ctx context.Context, accountID int, transac
 	return nil
 }
 
-func (db *DB) ApplyReservedMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error {
+func (db *DB) ApplyReservedMoney(ctx context.Context, transaction models.ReserveTransaction) error {
 	tx, err := db.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("err recognize money: %w", err)
@@ -232,7 +232,7 @@ func (db *DB) ApplyReservedMoney(ctx context.Context, accountID int, transaction
 			db.log.Error("err rolling back recognize")
 		}
 	}()
-	wallet, err := db.checkReservedBalance(ctx, tx, accountID, transaction.Amount)
+	wallet, err := db.checkReservedBalance(ctx, tx, transaction.AccountID, transaction.Amount)
 	if err != nil {
 		return err
 	}
@@ -240,7 +240,7 @@ func (db *DB) ApplyReservedMoney(ctx context.Context, accountID int, transaction
 	if err != nil {
 		return err
 	}
-	err = db.updateOrderStatus(ctx, tx, accountID, "Completed", transaction)
+	err = db.updateOrderStatus(ctx, tx, transaction.AccountID, "Completed", transaction)
 	if err != nil {
 		return err
 	}
@@ -260,7 +260,7 @@ func (db *DB) ApplyReservedMoney(ctx context.Context, accountID int, transaction
 	return nil
 }
 
-func (db *DB) CancelReserve(ctx context.Context, accountID int, transaction models.ReserveTransaction) error {
+func (db *DB) CancelReserve(ctx context.Context, transaction models.ReserveTransaction) error {
 	tx, err := db.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("err recognize money: %w", err)
@@ -270,7 +270,7 @@ func (db *DB) CancelReserve(ctx context.Context, accountID int, transaction mode
 			db.log.Error("err rolling back cancel reserve")
 		}
 	}()
-	wallet, err := db.checkReservedBalance(ctx, tx, accountID, transaction.Amount)
+	wallet, err := db.checkReservedBalance(ctx, tx, transaction.AccountID, transaction.Amount)
 	if err != nil {
 		return err
 	}
@@ -278,11 +278,11 @@ func (db *DB) CancelReserve(ctx context.Context, accountID int, transaction mode
 	if err != nil {
 		return err
 	}
-	err = db.depositMoney(ctx, tx, accountID, transaction.Amount)
+	err = db.depositMoney(ctx, tx, transaction.AccountID, transaction.Amount)
 	if err != nil {
 		return err
 	}
-	err = db.updateOrderStatus(ctx, tx, accountID, "Cancelled", transaction)
+	err = db.updateOrderStatus(ctx, tx, transaction.AccountID, "Cancelled", transaction)
 	if err != nil {
 		return err
 	}

@@ -14,6 +14,7 @@ type TransferTransaction struct {
 }
 
 type ReserveTransaction struct {
+	AccountID int     `json:"account_id"`
 	ServiceID int     `json:"service_id"`
 	OrderID   int     `json:"order_id"`
 	Amount    float64 `json:"amount"`

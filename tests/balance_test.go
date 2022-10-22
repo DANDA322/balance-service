@@ -1,7 +1,10 @@
 package tests
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -90,34 +93,53 @@ var transactions = []models.TransactionFullInfo{
 }
 
 var reserveTransaction = &models.ReserveTransaction{
+	AccountID: 555,
 	ServiceID: 1,
 	OrderID:   111,
 	Amount:    100.5,
 }
 
 var reserveTransaction2 = &models.ReserveTransaction{
+	AccountID: 555,
 	ServiceID: 1,
 	OrderID:   111,
 	Amount:    5000,
 }
 
 var reserveTransaction3 = &models.ReserveTransaction{
+	AccountID: 555,
 	ServiceID: 1,
 	OrderID:   222,
 	Amount:    100.5,
 }
 
+var csvText = "ServiceTitle;Amount\nУслуга;201\n"
+
+func (s *IntegrationTestSuite) TestNotFound() {
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/blabla", token1, "")
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), http.StatusNotFound, code)
+	require.Equal(s.T(), "", string(resp))
+}
+
 func (s *IntegrationTestSuite) TestAddDeposit() {
-	resp, code, err := s.processRequest("POST", "/wallet/addDeposit", token1, transaction1)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/addDeposit", token1, transaction1)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusOK, code)
 	require.Equal(s.T(), "{\"response\":\"OK\"}\n", string(resp))
 	checkBalance(s.T(), s, token1, balance1)
 }
 
+func (s *IntegrationTestSuite) TestAddDepositWrongJSON() {
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/addDeposit", token1, transactions)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), http.StatusBadRequest, code)
+	require.Equal(s.T(), "{\"error\":\"Can't decode json\"}\n", string(resp))
+}
+
 func (s *IntegrationTestSuite) TestGetBalance() {
 	depositMoney(s.T(), s, token1, transaction1)
-	resp, code, err := s.processRequest("GET", "/wallet/getBalance", token1, nil)
+	resp, code, err := s.processRequest(http.MethodGet, "/wallet/getBalance", token1, nil)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusOK, code)
 	respStruct := models.Balance{}
@@ -128,14 +150,14 @@ func (s *IntegrationTestSuite) TestGetBalance() {
 }
 
 func (s *IntegrationTestSuite) TestGetBalanceNotFound() {
-	resp, code, err := s.processRequest("GET", "/wallet/getBalance", token1, nil)
+	resp, code, err := s.processRequest(http.MethodGet, "/wallet/getBalance", token1, nil)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusNotFound, code)
 	require.Equal(s.T(), "{\"error\":\"wallet not found\"}\n", string(resp))
 }
 
 func (s *IntegrationTestSuite) TestGetBalanceNotAuth() {
-	resp, code, err := s.processRequest("GET", "/wallet/getBalance", "", nil)
+	resp, code, err := s.processRequest(http.MethodGet, "/wallet/getBalance", "", nil)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusUnauthorized, code)
 	require.Equal(s.T(), "{\"error\":\"Unauthorized\"}\n", string(resp))
@@ -143,15 +165,23 @@ func (s *IntegrationTestSuite) TestGetBalanceNotAuth() {
 
 func (s *IntegrationTestSuite) TestWithdrawMoney() {
 	depositMoney(s.T(), s, token1, transaction1)
-	resp, code, err := s.processRequest("POST", "/wallet/withdrawMoney", token1, transaction2)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/withdrawMoney", token1, transaction2)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusOK, code)
 	require.Equal(s.T(), "{\"response\":\"OK\"}\n", string(resp))
 	checkBalance(s.T(), s, token1, balance0)
 }
 
+func (s *IntegrationTestSuite) TestWithdrawMoneyWrongJSON() {
+	depositMoney(s.T(), s, token1, transaction1)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/withdrawMoney", token1, transactions)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), http.StatusBadRequest, code)
+	require.Equal(s.T(), "{\"error\":\"Can't decode json\"}\n", string(resp))
+}
+
 func (s *IntegrationTestSuite) TestWithdrawMoneyNotFound() {
-	resp, code, err := s.processRequest("POST", "/wallet/withdrawMoney", token1, transaction2)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/withdrawMoney", token1, transaction2)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusNotFound, code)
 	require.Equal(s.T(), "{\"error\":\"wallet not found\"}\n", string(resp))
@@ -159,7 +189,7 @@ func (s *IntegrationTestSuite) TestWithdrawMoneyNotFound() {
 
 func (s *IntegrationTestSuite) TestWithdrawMoneyNotEnoughMoney() {
 	depositMoney(s.T(), s, token1, transaction1)
-	resp, code, err := s.processRequest("POST", "/wallet/withdrawMoney", token1, transaction3)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/withdrawMoney", token1, transaction3)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusConflict, code)
 	require.Equal(s.T(), "{\"error\":\"not enough money on the balance\"}\n", string(resp))
@@ -168,7 +198,7 @@ func (s *IntegrationTestSuite) TestWithdrawMoneyNotEnoughMoney() {
 func (s *IntegrationTestSuite) TestTransferMoney() {
 	depositMoney(s.T(), s, token1, transaction1)
 	depositMoney(s.T(), s, token2, transaction1)
-	resp, code, err := s.processRequest("POST", "/wallet/transferMoney", token1, transferTransaction)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/transferMoney", token1, transferTransaction)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusOK, code)
 	require.Equal(s.T(), "{\"response\":\"OK\"}\n", string(resp))
@@ -178,7 +208,7 @@ func (s *IntegrationTestSuite) TestTransferMoney() {
 
 func (s *IntegrationTestSuite) TestTransferMoneyWalletNotFound() {
 	depositMoney(s.T(), s, token1, transaction1)
-	resp, code, err := s.processRequest("POST", "/wallet/transferMoney", token1, transferTransaction)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/transferMoney", token1, transferTransaction)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusNotFound, code)
 	require.Equal(s.T(), "{\"error\":\"wallet not found\"}\n", string(resp))
@@ -187,7 +217,7 @@ func (s *IntegrationTestSuite) TestTransferMoneyWalletNotFound() {
 func (s *IntegrationTestSuite) TestTransferMoneyNotEnoughMoney() {
 	depositMoney(s.T(), s, token1, transaction4)
 	depositMoney(s.T(), s, token2, transaction1)
-	resp, code, err := s.processRequest("POST", "/wallet/transferMoney", token1, transferTransaction)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/transferMoney", token1, transferTransaction)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusConflict, code)
 	require.Equal(s.T(), "{\"error\":\"not enough money on the balance\"}\n", string(resp))
@@ -199,7 +229,7 @@ func (s *IntegrationTestSuite) TestGetWalletTransactionsSortByDateDesc() {
 	withdrawMoney(s.T(), s, token1, transaction2)
 	from := time.Now()
 	to := from.Add(time.Hour * 24)
-	resp, code, err := s.processRequest("GET", "/wallet/getTransactions?from="+from.Format(dateTimeFmt)+
+	resp, code, err := s.processRequest(http.MethodGet, "/wallet/getTransactions?from="+from.Format(dateTimeFmt)+
 		"&to="+to.Format(dateTimeFmt)+"&limit=10&offset=0&descending=true&sorting=date", token1, nil)
 	var respStruct []models.TransactionFullInfo
 	require.NoError(s.T(), err)
@@ -212,7 +242,7 @@ func (s *IntegrationTestSuite) TestGetWalletTransactionsSortByDateDesc() {
 func (s *IntegrationTestSuite) TestGetWalletTransactionsWalletNotFound() {
 	from := time.Now()
 	to := from.Add(time.Hour * 24)
-	resp, code, err := s.processRequest("GET", "/wallet/getTransactions?from="+from.Format(dateTimeFmt)+
+	resp, code, err := s.processRequest(http.MethodGet, "/wallet/getTransactions?from="+from.Format(dateTimeFmt)+
 		"&to="+to.Format(dateTimeFmt)+"&limit=10&offset=0&descending=true&sorting=amount", token1, nil)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusNotFound, code)
@@ -221,7 +251,7 @@ func (s *IntegrationTestSuite) TestGetWalletTransactionsWalletNotFound() {
 
 func (s *IntegrationTestSuite) TestReserveMoney() {
 	depositMoney(s.T(), s, token1, transaction1)
-	resp, code, err := s.processRequest("POST", "/wallet/reserveMoney", token1, reserveTransaction)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/reserveMoney", token1, reserveTransaction)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusOK, code)
 	require.Equal(s.T(), "{\"response\":\"OK\"}\n", string(resp))
@@ -229,7 +259,7 @@ func (s *IntegrationTestSuite) TestReserveMoney() {
 }
 
 func (s *IntegrationTestSuite) TestReserveMoneyWalletNotFound() {
-	resp, code, err := s.processRequest("POST", "/wallet/reserveMoney", token1, reserveTransaction)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/reserveMoney", token1, reserveTransaction)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusNotFound, code)
 	require.Equal(s.T(), "{\"error\":\"wallet not found\"}\n", string(resp))
@@ -237,7 +267,7 @@ func (s *IntegrationTestSuite) TestReserveMoneyWalletNotFound() {
 
 func (s *IntegrationTestSuite) TestReserveMoneyNotEnoughMoney() {
 	depositMoney(s.T(), s, token1, transaction4)
-	resp, code, err := s.processRequest("POST", "/wallet/reserveMoney", token1, reserveTransaction)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/reserveMoney", token1, reserveTransaction)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusConflict, code)
 	require.Equal(s.T(), "{\"error\":\"not enough money on the balance\"}\n", string(resp))
@@ -246,14 +276,14 @@ func (s *IntegrationTestSuite) TestReserveMoneyNotEnoughMoney() {
 func (s *IntegrationTestSuite) TestApplyReserveMoney() {
 	depositMoney(s.T(), s, token1, transaction1)
 	reserveMoney(s.T(), s, token1, reserveTransaction)
-	resp, code, err := s.processRequest("POST", "/wallet/applyReserve", token1, reserveTransaction)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/applyReserve", token1, reserveTransaction)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusOK, code)
 	require.Equal(s.T(), "{\"response\":\"OK\"}\n", string(resp))
 }
 
 func (s *IntegrationTestSuite) TestApplyReserveMoneyWalletNotFound() {
-	resp, code, err := s.processRequest("POST", "/wallet/applyReserve", token1, reserveTransaction)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/applyReserve", token1, reserveTransaction)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusNotFound, code)
 	require.Equal(s.T(), "{\"error\":\"wallet not found\"}\n", string(resp))
@@ -262,7 +292,7 @@ func (s *IntegrationTestSuite) TestApplyReserveMoneyWalletNotFound() {
 func (s *IntegrationTestSuite) TestApplyReserveNotEnoughMoney() {
 	depositMoney(s.T(), s, token1, transaction1)
 	reserveMoney(s.T(), s, token1, reserveTransaction)
-	resp, code, err := s.processRequest("POST", "/wallet/applyReserve", token1, reserveTransaction2)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/applyReserve", token1, reserveTransaction2)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusConflict, code)
 	require.Equal(s.T(), "{\"error\":\"not enough reserved money on the balance\"}\n", string(resp))
@@ -271,7 +301,7 @@ func (s *IntegrationTestSuite) TestApplyReserveNotEnoughMoney() {
 func (s *IntegrationTestSuite) TestApplyReserveOrderNotFound() {
 	depositMoney(s.T(), s, token1, transaction1)
 	reserveMoney(s.T(), s, token1, reserveTransaction)
-	resp, code, err := s.processRequest("POST", "/wallet/applyReserve", token1, reserveTransaction3)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/applyReserve", token1, reserveTransaction3)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusNotFound, code)
 	require.Equal(s.T(), "{\"error\":\"reserved order not found\"}\n", string(resp))
@@ -280,15 +310,38 @@ func (s *IntegrationTestSuite) TestApplyReserveOrderNotFound() {
 func (s *IntegrationTestSuite) TestCancelReserve() {
 	depositMoney(s.T(), s, token1, transaction1)
 	reserveMoney(s.T(), s, token1, reserveTransaction)
-	resp, code, err := s.processRequest("POST", "/wallet/cancelReserve", token1, reserveTransaction)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/cancelReserve", token1, reserveTransaction)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusOK, code)
 	require.Equal(s.T(), "{\"response\":\"OK\"}\n", string(resp))
 }
 
+func (s *IntegrationTestSuite) TestGetReport() {
+	depositMoney(s.T(), s, token1, transaction1)
+	depositMoney(s.T(), s, token1, transaction1)
+	reserveMoney(s.T(), s, token1, reserveTransaction)
+	reserveMoney(s.T(), s, token1, reserveTransaction3)
+	applyMoney(s.T(), s, token1, reserveTransaction)
+	applyMoney(s.T(), s, token1, reserveTransaction3)
+	path := fmt.Sprintf("http://localhost%s%s", addr, "/wallet/getReport?month="+time.Now().Format("2006-01"))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
+	require.NoError(s.T(), err)
+	req.Header.Set("Authorization", "Bearer "+token1)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), http.StatusOK, resp.StatusCode)
+	require.Equal(s.T(), "text/csv", resp.Header.Get("Content-Type"))
+	require.Equal(s.T(), "attachment; filename=\"report.csv\"", resp.Header.Get("Content-Disposition"))
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), csvText, string(body))
+	err = resp.Body.Close()
+	require.NoError(s.T(), err)
+}
+
 func checkBalance(t *testing.T, s *IntegrationTestSuite, token string, balance *models.Balance) {
 	t.Helper()
-	resp, code, err := s.processRequest("GET", "/wallet/getBalance", token, nil)
+	resp, code, err := s.processRequest(http.MethodGet, "/wallet/getBalance", token, nil)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusOK, code)
 	respStruct := models.Balance{}
@@ -300,7 +353,7 @@ func checkBalance(t *testing.T, s *IntegrationTestSuite, token string, balance *
 
 func depositMoney(t *testing.T, s *IntegrationTestSuite, token string, transaction *models.Transaction) {
 	t.Helper()
-	resp, code, err := s.processRequest("POST", "/wallet/addDeposit", token, transaction)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/addDeposit", token, transaction)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusOK, code)
 	require.Equal(s.T(), "{\"response\":\"OK\"}\n", string(resp))
@@ -308,7 +361,7 @@ func depositMoney(t *testing.T, s *IntegrationTestSuite, token string, transacti
 
 func withdrawMoney(t *testing.T, s *IntegrationTestSuite, token string, transaction *models.Transaction) {
 	t.Helper()
-	resp, code, err := s.processRequest("POST", "/wallet/withdrawMoney", token, transaction)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/withdrawMoney", token, transaction)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusOK, code)
 	require.Equal(s.T(), "{\"response\":\"OK\"}\n", string(resp))
@@ -316,7 +369,15 @@ func withdrawMoney(t *testing.T, s *IntegrationTestSuite, token string, transact
 
 func reserveMoney(t *testing.T, s *IntegrationTestSuite, token string, transaction *models.ReserveTransaction) {
 	t.Helper()
-	resp, code, err := s.processRequest("POST", "/wallet/reserveMoney", token, transaction)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/reserveMoney", token, transaction)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), http.StatusOK, code)
+	require.Equal(s.T(), "{\"response\":\"OK\"}\n", string(resp))
+}
+
+func applyMoney(t *testing.T, s *IntegrationTestSuite, token string, transaction *models.ReserveTransaction) {
+	t.Helper()
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/applyReserve", token, transaction)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusOK, code)
 	require.Equal(s.T(), "{\"response\":\"OK\"}\n", string(resp))

@@ -1,0 +1,513 @@
+openapi: 3.0.3
+info:
+  title: User-Balance-Service
+  description: Микросервис для работы с балансом пользователей.
+  version: 1.0.0
+servers:
+  - url: 'http://localhost:4444/'
+paths:
+  /wallet/getBalance:
+    get:
+      summary: Возвращает баланс пользователя.
+      operationId: getBalance
+      description: Возвращает баланс пользователя, количество денег и валюту. ID пользователя получаем из JWT токена.
+      tags:
+        - Wallet
+      parameters:
+      - name: accountID
+        in: header
+        required: true
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Balance'
+        '404':
+          description: Такого баланса не существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletNotFound'
+        default:
+          description: Остальные ошибки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefaultError'
+  /wallet/getTransactions:
+    get:
+      summary: Возвращает список транзакций пользователя.
+      operationId: getTransactions
+      description: Возвращает список транзакций пользователя, с комментариями откуда и зачем были начислены/списаны средства с баланса. Предусмотрена пагинацию и сортировка по сумме и дате. ID пользователя получаем из JWT токена.
+      tags:
+        - Wallet
+      parameters:
+        - name: accountID
+          in: header
+          required: true
+        - name: from
+          in: path
+          required: true
+        - name: to
+          in: path
+          required: true
+        - name: limit
+          in: path
+          required: true
+        - name: offset
+          in: path
+          required: true
+        - name: descending
+          in: path
+        - name: sorting
+          in: path
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TransactionFullInfo'
+        '400':
+          description: Невозможно декодировать json/время
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletBadRequest'
+        '404':
+          description: Такого баланса не существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletNotFound'
+        default:
+          description: Остальные ошибки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefaultError'
+  /wallet/getReport:
+    get:
+      summary: Метод получения месячного отчета.
+      operationId: getReport
+      description: Возвращает отчет в формате csv. На вход - год-месяц. На выходе - ссылка на CSV файл.
+      tags:
+        - Wallet
+      parameters:
+        - name: month
+          in: path
+          required: true
+          example: "2022-10"
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            text/csv:
+              example: ServiceTitle;Amount
+        '404':
+          description: Такого баланса не существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletNotFound'
+        default:
+          description: Остальные ошибки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefaultError'
+  /wallet/addDeposit:
+    post:
+      summary: Добавляет деньги на баланс пользователя.
+      operationId: addDeposit
+      description: Добавляет деньги на баланс пользователя по ID, если баланс не существовал создает его. ID пользователя получаем из JWT токена.
+      tags:
+        - Wallet
+      parameters:
+        - name: accountID
+          in: header
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepositTransaction'
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseOK'
+        '400':
+          description: Невозможно декодировать json/время
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletBadRequest'
+        default:
+          description: Остальные ошибки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefaultError'
+  /wallet/withdrawMoney:
+    post:
+      summary: Снимает деньги с баланса пользователя.
+      operationId: withdrawMoney
+      description: Снимает деньги с баланса пользователя по ID. ID пользователя получаем из JWT токена.
+      tags:
+        - Wallet
+      parameters:
+        - name: accountID
+          in: header
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawTransaction'
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseOK'
+        '400':
+          description: Невозможно декодировать json/время
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletBadRequest'
+        '404':
+          description: Такого баланса не существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletNotFound'
+        '409':
+          description: На балансе недостаточно средств
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletNotEnoughMoney'
+        default:
+          description: Остальные ошибки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefaultError'
+  /wallet/transferMoney:
+    post:
+      summary: Переводит деньги с баланса текущего пользователя, на указанный аккаунт другого пользователя.
+      operationId: transferMoney
+      description: Переводит деньги с баланса текущего пользователя, на указанный аккаунт другого пользователя. ID текущего пользователя получаем из JWT токена.
+      tags:
+        - Wallet
+      parameters:
+        - name: accountID
+          in: header
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferTransaction'
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseOK'
+        '400':
+          description: Невозможно декодировать json/время
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletBadRequest'
+        '404':
+          description: Такого баланса не существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletNotFound'
+        '409':
+          description: На балансе недостаточно средств
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletNotEnoughMoney'
+        default:
+          description: Остальные ошибки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefaultError'
+  /wallet/reserveMoney:
+    post:
+      summary: Метод резервирования средств с основного баланса на отдельном счете.
+      operationId: reserveMoney
+      description: Метод резервирования средств с основного баланса на отдельном счете пользователя.
+      tags:
+        - Wallet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReserveTransaction'
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseOK'
+        '404':
+          description: Такого баланса не существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletNotFound'
+        '409':
+          description: На балансе недостаточно средств
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletNotEnoughMoney'
+        '400':
+          description: Невозможно декодировать json/время
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletBadRequest'
+        default:
+          description: Остальные ошибки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefaultError'
+  /wallet/applyReserve:
+    post:
+      summary: Метод признания выручки.
+      operationId: applyMoney
+      description: Метод признания выручки – списывает из резерва деньги, добавляет данные в отчет для бухгалтерии.
+      tags:
+        - Wallet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReserveTransaction'
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseOK'
+        '400':
+          description: Невозможно декодировать json/время
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletBadRequest'
+        '404':
+          description: Такого баланса не существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletNotFound'
+        '409':
+          description: На балансе недостаточно средств
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletNotEnoughMoney'
+        default:
+          description: Остальные ошибки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefaultError'
+  /wallet/cancelReserve:
+    post:
+      summary: Метод разрезервирования денег.
+      operationId: cancelReserve
+      description: Метод разрезервирования денег – возвращает из резерва деньги на основной баланс, добавляет данные в отчет для бухгалтерии.
+      tags:
+        - Wallet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReserveTransaction'
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseOK'
+        '400':
+          description: Невозможно декодировать json/время
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletBadRequest'
+        '404':
+          description: Такого баланса не существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletNotFound'
+        '409':
+          description: На балансе недостаточно средств
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletNotEnoughMoney'
+        default:
+          description: Остальные ошибки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefaultError'
+
+components:
+  schemas:
+    Balance:
+      type: object
+      properties:
+        currency:
+          type: string
+          example: RUB
+        amount:
+          type: number
+          format: float
+          example: 100.5
+    DefaultError:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Some text error"
+    ErrorWalletNotFound:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "wallet not found"
+    ErrorWalletBadRequest:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Can't decode json"
+    ErrorWalletNotEnoughMoney:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "not enough money on the balance"
+    ResponseOK:
+      type: object
+      properties:
+        response:
+          type: string
+          example: "OK"
+    DepositTransaction:
+      type: object
+      properties:
+        amount:
+          type: number
+          format: float
+          example: 100.5
+        comment:
+          type: string
+          example: "Пополнение баланса"
+    WithdrawTransaction:
+      type: object
+      properties:
+        amount:
+          type: number
+          format: float
+          example: 100.5
+        comment:
+          type: string
+          example: "Снятие средств"
+    TransferTransaction:
+      type: object
+      properties:
+        target:
+          type: integer
+          example: 333
+        amount:
+          type: number
+          format: float
+          example: 100.5
+        comment:
+          type: string
+          example: "Перевод средств"
+    ReserveTransaction:
+      type: object
+      properties:
+        account_id:
+          type: integer
+          example: 555
+        service_id:
+          type: integer
+          example: 1
+        order_id:
+          type: integer
+          example: 111
+        amount:
+          type: number
+          format: float
+          example: 100.5
+    TransactionFullInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        wallet_id:
+          type: integer
+          example: 555
+        amount:
+          type: number
+          format: float
+          example: 100.5
+        target_wallet_id:
+          type: integer
+          example: 333
+        service_id:
+          type: integer
+          example: 1
+        comment:
+          type: string
+          example: "Перевод"
+        timestamp:
+          type: string
+          format: 'date-time'
+          example: "2022-10-22T14:03:30+03:00"
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []

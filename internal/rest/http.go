@@ -21,11 +21,11 @@ type Balance interface {
 	GetBalance(ctx context.Context, accountID int) (float64, error)
 	WithdrawMoney(ctx context.Context, accountID int, transaction models.Transaction) error
 	TransferMoney(ctx context.Context, accountID int, transaction models.TransferTransaction) error
-	ReserveMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
-	ApplyReservedMoney(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
+	ReserveMoney(ctx context.Context, transaction models.ReserveTransaction) error
+	ApplyReservedMoney(ctx context.Context, transaction models.ReserveTransaction) error
 	GetWalletTransaction(ctx context.Context, accountID int,
 		queryParams *models.TransactionsQueryParams) ([]models.TransactionFullInfo, error)
-	CancelReserve(ctx context.Context, accountID int, transaction models.ReserveTransaction) error
+	CancelReserve(ctx context.Context, transaction models.ReserveTransaction) error
 	GetReport(ctx context.Context, month time.Time) (*os.File, error)
 }
 
@@ -64,6 +64,7 @@ func (h *handler) writeJSONResponse(w http.ResponseWriter, data interface{}) {
 
 func (h *handler) writeCSVResponse(w http.ResponseWriter, file *os.File) {
 	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"report.csv\"")
 	fileResponse, err := ioutil.ReadFile(file.Name())
 	if err != nil {
 		h.writeErrResponse(w, http.StatusInternalServerError, fmt.Sprintf("Cannot open file %v", err))

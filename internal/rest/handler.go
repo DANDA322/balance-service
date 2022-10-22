@@ -17,6 +17,7 @@ import (
 const (
 	dateTimeFmt1 = "2006-01-02T15:04:05Z"
 	dateTimeFmt2 = "2006-01"
+	roleAdmin    = "admin"
 )
 
 //go:embed public.pub
@@ -128,7 +129,7 @@ func (h *handler) TransferMoney(w http.ResponseWriter, r *http.Request) { //noli
 	h.writeJSONResponse(w, map[string]interface{}{"response": "OK"})
 }
 
-func (h *handler) ReserveMoney(w http.ResponseWriter, r *http.Request) { //nolint:dupl
+func (h *handler) ReserveMoney(w http.ResponseWriter, r *http.Request) {
 	transaction := models.ReserveTransaction{}
 	if err := json.NewDecoder(r.Body).Decode(&transaction); err != nil {
 		h.writeErrResponse(w, http.StatusBadRequest, "Can't decode json")
@@ -137,7 +138,11 @@ func (h *handler) ReserveMoney(w http.ResponseWriter, r *http.Request) { //nolin
 	}
 	ctx := r.Context()
 	sessionInfo := ctx.Value(SessionKey).(models.SessionInfo)
-	err := h.balance.ReserveMoney(ctx, sessionInfo.AccountID, transaction)
+	if sessionInfo.Role != roleAdmin && transaction.AccountID != sessionInfo.AccountID {
+		h.writeErrResponse(w, http.StatusForbidden, "")
+		return
+	}
+	err := h.balance.ReserveMoney(ctx, transaction)
 	switch {
 	case err == nil:
 	case errors.Is(err, models.ErrWalletNotFound):
@@ -163,7 +168,11 @@ func (h *handler) ApplyReservedMoney(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	sessionInfo := ctx.Value(SessionKey).(models.SessionInfo)
-	err := h.balance.ApplyReservedMoney(ctx, sessionInfo.AccountID, transaction)
+	if sessionInfo.Role != roleAdmin && transaction.AccountID != sessionInfo.AccountID {
+		h.writeErrResponse(w, http.StatusForbidden, "")
+		return
+	}
+	err := h.balance.ApplyReservedMoney(ctx, transaction)
 	switch {
 	case err == nil:
 	case errors.Is(err, models.ErrWalletNotFound):
@@ -246,7 +255,11 @@ func (h *handler) CancelReserve(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	sessionInfo := ctx.Value(SessionKey).(models.SessionInfo)
-	err := h.balance.CancelReserve(ctx, sessionInfo.AccountID, transaction)
+	if sessionInfo.Role != roleAdmin && transaction.AccountID != sessionInfo.AccountID {
+		h.writeErrResponse(w, http.StatusForbidden, "")
+		return
+	}
+	err := h.balance.CancelReserve(ctx, transaction)
 	switch {
 	case err == nil:
 	case errors.Is(err, models.ErrWalletNotFound):
