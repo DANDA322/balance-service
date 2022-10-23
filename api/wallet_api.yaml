@@ -150,6 +150,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorWalletBadRequest'
+        '409':
+          description: UniqueViolation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWalletUniqueViolation'
         default:
           description: Остальные ошибки
           content:
@@ -193,11 +199,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorWalletNotFound'
         '409':
-          description: На балансе недостаточно средств
+          description: На балансе недостаточно средств/UniqueViolation
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorWalletNotEnoughMoney'
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWalletNotEnoughMoney'
+                  - $ref: '#/components/schemas/ErrorWalletUniqueViolation'
         default:
           description: Остальные ошибки
           content:
@@ -241,11 +249,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorWalletNotFound'
         '409':
-          description: На балансе недостаточно средств
+          description: На балансе недостаточно средств/UniqueViolation
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorWalletNotEnoughMoney'
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWalletNotEnoughMoney'
+                  - $ref: '#/components/schemas/ErrorWalletUniqueViolation'
         default:
           description: Остальные ошибки
           content:
@@ -279,11 +289,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorWalletNotFound'
         '409':
-          description: На балансе недостаточно средств
+          description: На балансе недостаточно средств/UniqueViolation
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorWalletNotEnoughMoney'
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWalletNotEnoughMoney'
+                  - $ref: '#/components/schemas/ErrorWalletUniqueViolation'
         '400':
           description: Невозможно декодировать json/время
           content:
@@ -421,6 +433,12 @@ components:
         error:
           type: string
           example: "not enough money on the balance"
+    ErrorWalletUniqueViolation:
+      type: object
+      properties:
+        error:
+          type: string
+          example: " ERROR: duplicate key value violates unique constraint (SQLSTATE 23505)"
     ResponseOK:
       type: object
       properties:
@@ -430,6 +448,9 @@ components:
     DepositTransaction:
       type: object
       properties:
+        idempotence_key:
+          type: integer
+          example: 1
         amount:
           type: number
           format: float
@@ -440,6 +461,9 @@ components:
     WithdrawTransaction:
       type: object
       properties:
+        idempotence_key:
+          type: integer
+          example: 2
         amount:
           type: number
           format: float
@@ -450,6 +474,9 @@ components:
     TransferTransaction:
       type: object
       properties:
+        idempotence_key:
+          type: integer
+          example: 3
         target:
           type: integer
           example: 333
