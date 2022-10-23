@@ -384,7 +384,7 @@ func (db *DB) GetWalletTransactions(ctx context.Context, accountID int,
 	var transactions []models.TransactionFullInfo
 	var otherTransaction models.TransactionFullInfo
 	for i := 0; i < retries; i++ {
-		err = func([]models.TransactionFullInfo) error {
+		err = func() error {
 			wallet, err = db.GetWallet(ctx, accountID)
 			if err != nil {
 				return fmt.Errorf("err executing [GetWalletTransactions]: %w", err)
@@ -408,7 +408,7 @@ func (db *DB) GetWalletTransactions(ctx context.Context, accountID int,
 				transactions = append(transactions, otherTransaction)
 			}
 			return nil
-		}(transactions)
+		}()
 		if err != nil {
 			continue
 		}
@@ -430,7 +430,7 @@ func (db *DB) GetReport(ctx context.Context, month time.Time) (map[string]float6
 	services := make(map[string]float64)
 	var service models.Service
 	for i := 0; i < retries; i++ {
-		err = func(map[string]float64) error {
+		err = func() error {
 			rows, err = db.db.QueryxContext(ctx, query, status, month, month.AddDate(0, 1, 0))
 			if err != nil {
 				return fmt.Errorf("err executing [GetReport]: %w", err)
@@ -447,7 +447,7 @@ func (db *DB) GetReport(ctx context.Context, month time.Time) (map[string]float6
 				services[service.Title] += service.Amount
 			}
 			return nil
-		}(services)
+		}()
 		if err != nil {
 			continue
 		}

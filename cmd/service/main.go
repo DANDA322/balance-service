@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
-
-	"os"
 
 	"github.com/DANDA322/balance-service/internal"
 	"github.com/DANDA322/balance-service/internal/pgstore"
