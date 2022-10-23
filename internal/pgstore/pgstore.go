@@ -140,11 +140,6 @@ func (db *DB) WithdrawMoneyFromWallet(ctx context.Context, ownerID int, transact
 		if err != nil {
 			continue
 		}
-		//defer func() {
-		//	if err = tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
-		//		db.log.Error("err rolling back withdraw transaction")
-		//	}
-		//}()
 		var wallet *models.Wallet
 		wallet, err = db.checkBalance(ctx, tx, ownerID, transaction.Amount)
 		if err != nil {
@@ -189,11 +184,6 @@ func (db *DB) TransferMoney(ctx context.Context, accountID int, transaction mode
 		if err != nil {
 			continue
 		}
-		//defer func() {
-		//	if err = tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
-		//		db.log.Error("err rolling back withdraw transaction")
-		//	}
-		//}()
 		var wallet *models.Wallet
 		wallet, err = db.checkBalance(ctx, tx, accountID, transaction.Amount)
 		if err != nil {
@@ -354,28 +344,36 @@ func (db *DB) GetWalletTransactions(ctx context.Context, accountID int,
 	queryParams *models.TransactionsQueryParams) ([]models.TransactionFullInfo, error) {
 	var err error
 	for i := 0; i < retries; i++ {
-		var wallet *models.Wallet
-		wallet, err = db.GetWallet(ctx, accountID)
-		if err != nil {
-			continue
-		}
-		query := db.queryBuilder(queryParams.Sorting, queryParams.Descending)
 		var transactions []models.TransactionFullInfo
-		var rows *sqlx.Rows
-		rows, err = db.db.QueryxContext(ctx, query, wallet.ID, queryParams.From, queryParams.To,
-			queryParams.Limit, queryParams.Offset)
+		err = func([]models.TransactionFullInfo) error {
+			var wallet *models.Wallet
+			wallet, err = db.GetWallet(ctx, accountID)
+			if err != nil {
+				return err
+			}
+			query := db.queryBuilder(queryParams.Sorting, queryParams.Descending)
+			var rows *sqlx.Rows
+			rows, err = db.db.QueryxContext(ctx, query, wallet.ID, queryParams.From, queryParams.To,
+				queryParams.Limit, queryParams.Offset)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err = rows.Close(); err != nil {
+					db.log.Warnf("err closing rows: %v", err)
+				}
+			}()
+			var otherTransaction models.TransactionFullInfo
+			for rows.Next() {
+				if err = rows.StructScan(&otherTransaction); err != nil {
+					continue
+				}
+				transactions = append(transactions, otherTransaction)
+			}
+			return nil
+		}(transactions)
 		if err != nil {
 			continue
-		}
-		var otherTransaction models.TransactionFullInfo
-		for rows.Next() {
-			if err = rows.StructScan(&otherTransaction); err != nil {
-				continue
-			}
-			transactions = append(transactions, otherTransaction)
-		}
-		if err = rows.Close(); err != nil {
-			db.log.Warnf("err closing rows: %v", err)
 		}
 		return transactions, nil
 	}
@@ -392,21 +390,29 @@ func (db *DB) GetReport(ctx context.Context, month time.Time) (map[string]float6
 	status := "Completed"
 	var err error
 	for i := 0; i < retries; i++ {
-		var rows *sqlx.Rows
-		rows, err = db.db.QueryxContext(ctx, query, status, month, month.AddDate(0, 1, 0))
+		services := make(map[string]float64)
+		err = func(map[string]float64) error {
+			var rows *sqlx.Rows
+			rows, err = db.db.QueryxContext(ctx, query, status, month, month.AddDate(0, 1, 0))
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err = rows.Close(); err != nil {
+					db.log.Warnf("err closing rows: %v", err)
+				}
+			}()
+			var service models.Service
+			for rows.Next() {
+				if err = rows.StructScan(&service); err != nil {
+					return err
+				}
+				services[service.Title] += service.Amount
+			}
+			return nil
+		}(services)
 		if err != nil {
 			continue
-		}
-		services := make(map[string]float64)
-		var service models.Service
-		for rows.Next() {
-			if err = rows.StructScan(&service); err != nil {
-				continue
-			}
-			services[service.Title] += service.Amount
-		}
-		if err = rows.Close(); err != nil {
-			db.log.Warnf("err closing rows: %v", err)
 		}
 		return services, nil
 	}
