@@ -141,7 +141,7 @@ func (s *IntegrationTestSuite) TestAddDepositIdempotence() {
 	resp, code, err := s.processRequest(http.MethodPost, "/wallet/addDeposit", token1, transaction1)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusConflict, code)
-	require.Equal(s.T(), "{\"error\":\"unable to upsert deposit: err executing [UpsertDepositToWallet]: err "+
+	require.Equal(s.T(), "{\"error\":\"unable to upsert deposit: err "+
 		"executing [insertTransaction]: ERROR: duplicate key value violates unique constraint "+
 		"\\\"transaction_idempotence_key_key\\\" (SQLSTATE 23505)\"}\n", string(resp))
 }
@@ -194,7 +194,7 @@ func (s *IntegrationTestSuite) TestWithdrawMoneyIdempotence() {
 	resp, code, err := s.processRequest(http.MethodPost, "/wallet/withdrawMoney", token1, transaction2)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusConflict, code)
-	require.Equal(s.T(), "{\"error\":\"unable to withdraw money: err executing [WithdrawMoneyFromWallet]: "+
+	require.Equal(s.T(), "{\"error\":\"unable to withdraw money: "+
 		"err executing [insertTransaction]: ERROR: duplicate key value violates unique constraint "+
 		"\\\"transaction_idempotence_key_key\\\" (SQLSTATE 23505)\"}\n", string(resp))
 }
@@ -243,7 +243,7 @@ func (s *IntegrationTestSuite) TestTransferMoneyIdempotence() {
 	resp, code, err = s.processRequest(http.MethodPost, "/wallet/transferMoney", token1, transferTransaction)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusConflict, code)
-	require.Equal(s.T(), "{\"error\":\"unable to transfer money: err executing [TransferMoney]: err executing "+
+	require.Equal(s.T(), "{\"error\":\"unable to transfer money: err executing "+
 		"[insertTransaction]: ERROR: duplicate key value violates unique constraint "+
 		"\\\"transaction_idempotence_key_key\\\" (SQLSTATE 23505)\"}\n", string(resp))
 }
@@ -306,7 +306,7 @@ func (s *IntegrationTestSuite) TestReserveMoneyIdempotence() {
 	resp, code, err := s.processRequest(http.MethodPost, "/wallet/reserveMoney", token1, reserveTransaction)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusConflict, code)
-	require.Equal(s.T(), "{\"error\":\"unable to reserve money: err executing [ReserveMoneyFromWallet]: "+
+	require.Equal(s.T(), "{\"error\":\"unable to reserve money: "+
 		"err executing [insertReservedFunds]: ERROR: duplicate key value violates unique constraint "+
 		"\\\"reserved_funds_order_id_key\\\" (SQLSTATE 23505)\"}\n", string(resp))
 }
