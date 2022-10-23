@@ -3,13 +3,11 @@ package rest
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"io/ioutil"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/DANDA322/balance-service/internal/models"
+	"github.com/DANDA322/balance-service/pkg/csv"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -26,7 +24,7 @@ type Balance interface {
 	GetWalletTransaction(ctx context.Context, accountID int,
 		queryParams *models.TransactionsQueryParams) ([]models.TransactionFullInfo, error)
 	CancelReserve(ctx context.Context, transaction models.ReserveTransaction) error
-	GetReport(ctx context.Context, month time.Time) (*os.File, error)
+	GetReport(ctx context.Context, month time.Time) (map[string]float64, error)
 }
 
 func NewRouter(log *logrus.Logger, balance Balance) chi.Router {
@@ -62,14 +60,11 @@ func (h *handler) writeJSONResponse(w http.ResponseWriter, data interface{}) {
 	}
 }
 
-func (h *handler) writeCSVResponse(w http.ResponseWriter, file *os.File) {
+func (h *handler) writeCSVResponse(w http.ResponseWriter, data map[string]float64) {
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", "attachment; filename=\"report.csv\"")
-	fileResponse, err := ioutil.ReadFile(file.Name())
-	if err != nil {
-		h.writeErrResponse(w, http.StatusInternalServerError, fmt.Sprintf("Cannot open file %v", err))
-	}
-	_, err = w.Write(fileResponse)
+	writer := csv.WriterCSV{}
+	err := writer.WriteReport(w, data)
 	if err != nil {
 		h.log.Errorf("err to write report: %v", err)
 	}

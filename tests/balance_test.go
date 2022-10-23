@@ -20,28 +20,33 @@ const (
 )
 
 var transaction1 = &models.Transaction{
-	Amount:  100.50,
-	Comment: "Пополнение баланса",
+	IdempotenceKey: 1,
+	Amount:         100.50,
+	Comment:        "Пополнение баланса",
 }
 
 var transaction2 = &models.Transaction{
-	Amount:  100.50,
-	Comment: "Снятие средств",
+	IdempotenceKey: 2,
+	Amount:         100.50,
+	Comment:        "Снятие средств",
 }
 
 var transaction3 = &models.Transaction{
-	Amount:  10000.0,
-	Comment: "Снятие средств",
+	IdempotenceKey: 3,
+	Amount:         10000.0,
+	Comment:        "Снятие средств",
 }
 
 var transaction4 = &models.Transaction{
-	Amount:  50,
-	Comment: "Пополнение баланса",
+	IdempotenceKey: 4,
+	Amount:         50,
+	Comment:        "Пополнение баланса",
 }
 
 var transaction5 = &models.Transaction{
-	Amount:  1000.50,
-	Comment: "Пополнение баланса",
+	IdempotenceKey: 5,
+	Amount:         1000.50,
+	Comment:        "Пополнение баланса",
 }
 
 var balance0 = &models.Balance{
@@ -56,13 +61,14 @@ var balance1 = &models.Balance{
 
 var balance2 = &models.Balance{
 	Currency: "RUB",
-	Amount:   201,
+	Amount:   150.5,
 }
 
 var transferTransaction = &models.TransferTransaction{
-	Target:  333,
-	Amount:  100.5,
-	Comment: "Перевод",
+	IdempotenceKey: 6,
+	Target:         333,
+	Amount:         100.5,
+	Comment:        "Перевод",
 }
 
 var transactions = []models.TransactionFullInfo{
@@ -130,6 +136,16 @@ func (s *IntegrationTestSuite) TestAddDeposit() {
 	checkBalance(s.T(), s, token1, balance1)
 }
 
+func (s *IntegrationTestSuite) TestAddDepositIdempotence() {
+	depositMoney(s.T(), s, token1, transaction1)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/addDeposit", token1, transaction1)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), http.StatusConflict, code)
+	require.Equal(s.T(), "{\"error\":\"unable to upsert deposit: err executing [UpsertDepositToWallet]: err "+
+		"executing [insertTransaction]: ERROR: duplicate key value violates unique constraint "+
+		"\\\"transaction_idempotence_key_key\\\" (SQLSTATE 23505)\"}\n", string(resp))
+}
+
 func (s *IntegrationTestSuite) TestAddDepositWrongJSON() {
 	resp, code, err := s.processRequest(http.MethodPost, "/wallet/addDeposit", token1, transactions)
 	require.NoError(s.T(), err)
@@ -172,6 +188,17 @@ func (s *IntegrationTestSuite) TestWithdrawMoney() {
 	checkBalance(s.T(), s, token1, balance0)
 }
 
+func (s *IntegrationTestSuite) TestWithdrawMoneyIdempotence() {
+	depositMoney(s.T(), s, token1, transaction5)
+	withdrawMoney(s.T(), s, token1, transaction2)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/withdrawMoney", token1, transaction2)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), http.StatusConflict, code)
+	require.Equal(s.T(), "{\"error\":\"unable to withdraw money: err executing [WithdrawMoneyFromWallet]: "+
+		"err executing [insertTransaction]: ERROR: duplicate key value violates unique constraint "+
+		"\\\"transaction_idempotence_key_key\\\" (SQLSTATE 23505)\"}\n", string(resp))
+}
+
 func (s *IntegrationTestSuite) TestWithdrawMoneyWrongJSON() {
 	depositMoney(s.T(), s, token1, transaction1)
 	resp, code, err := s.processRequest(http.MethodPost, "/wallet/withdrawMoney", token1, transactions)
@@ -197,13 +224,28 @@ func (s *IntegrationTestSuite) TestWithdrawMoneyNotEnoughMoney() {
 
 func (s *IntegrationTestSuite) TestTransferMoney() {
 	depositMoney(s.T(), s, token1, transaction1)
-	depositMoney(s.T(), s, token2, transaction1)
+	depositMoney(s.T(), s, token2, transaction4)
 	resp, code, err := s.processRequest(http.MethodPost, "/wallet/transferMoney", token1, transferTransaction)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), http.StatusOK, code)
 	require.Equal(s.T(), "{\"response\":\"OK\"}\n", string(resp))
 	checkBalance(s.T(), s, token1, balance0)
 	checkBalance(s.T(), s, token2, balance2)
+}
+
+func (s *IntegrationTestSuite) TestTransferMoneyIdempotence() {
+	depositMoney(s.T(), s, token1, transaction5)
+	depositMoney(s.T(), s, token2, transaction4)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/transferMoney", token1, transferTransaction)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), http.StatusOK, code)
+	require.Equal(s.T(), "{\"response\":\"OK\"}\n", string(resp))
+	resp, code, err = s.processRequest(http.MethodPost, "/wallet/transferMoney", token1, transferTransaction)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), http.StatusConflict, code)
+	require.Equal(s.T(), "{\"error\":\"unable to transfer money: err executing [TransferMoney]: err executing "+
+		"[insertTransaction]: ERROR: duplicate key value violates unique constraint "+
+		"\\\"transaction_idempotence_key_key\\\" (SQLSTATE 23505)\"}\n", string(resp))
 }
 
 func (s *IntegrationTestSuite) TestTransferMoneyWalletNotFound() {
@@ -256,6 +298,17 @@ func (s *IntegrationTestSuite) TestReserveMoney() {
 	require.Equal(s.T(), http.StatusOK, code)
 	require.Equal(s.T(), "{\"response\":\"OK\"}\n", string(resp))
 	checkBalance(s.T(), s, token1, balance0)
+}
+
+func (s *IntegrationTestSuite) TestReserveMoneyIdempotence() {
+	depositMoney(s.T(), s, token1, transaction5)
+	reserveMoney(s.T(), s, token1, reserveTransaction)
+	resp, code, err := s.processRequest(http.MethodPost, "/wallet/reserveMoney", token1, reserveTransaction)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), http.StatusConflict, code)
+	require.Equal(s.T(), "{\"error\":\"unable to reserve money: err executing [ReserveMoneyFromWallet]: "+
+		"err executing [insertReservedFunds]: ERROR: duplicate key value violates unique constraint "+
+		"\\\"reserved_funds_order_id_key\\\" (SQLSTATE 23505)\"}\n", string(resp))
 }
 
 func (s *IntegrationTestSuite) TestReserveMoneyWalletNotFound() {
@@ -318,7 +371,7 @@ func (s *IntegrationTestSuite) TestCancelReserve() {
 
 func (s *IntegrationTestSuite) TestGetReport() {
 	depositMoney(s.T(), s, token1, transaction1)
-	depositMoney(s.T(), s, token1, transaction1)
+	depositMoney(s.T(), s, token1, transaction5)
 	reserveMoney(s.T(), s, token1, reserveTransaction)
 	reserveMoney(s.T(), s, token1, reserveTransaction3)
 	applyMoney(s.T(), s, token1, reserveTransaction)

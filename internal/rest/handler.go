@@ -11,13 +11,15 @@ import (
 	"time"
 
 	"github.com/DANDA322/balance-service/internal/models"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/sirupsen/logrus"
 )
 
 const (
-	dateTimeFmt1 = "2006-01-02T15:04:05Z"
-	dateTimeFmt2 = "2006-01"
-	roleAdmin    = "admin"
+	dateTimeLayout  = "2006-01-02T15:04:05Z"
+	yearMonthLayout = "2006-01"
+	roleAdmin       = "admin"
 )
 
 //go:embed public.pub
@@ -67,6 +69,11 @@ func (h *handler) DepositMoneyToWallet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	sessionInfo := ctx.Value(SessionKey).(models.SessionInfo)
 	err := h.balance.AddDeposit(ctx, sessionInfo.AccountID, transaction)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgerrcode.UniqueViolation == pgErr.SQLState() {
+		h.writeErrResponse(w, http.StatusConflict, err.Error())
+		return
+	}
 	switch {
 	case err == nil:
 	default:
@@ -87,6 +94,11 @@ func (h *handler) WithdrawMoneyFromWallet(w http.ResponseWriter, r *http.Request
 	ctx := r.Context()
 	sessionInfo := ctx.Value(SessionKey).(models.SessionInfo)
 	err := h.balance.WithdrawMoney(ctx, sessionInfo.AccountID, transaction)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgerrcode.UniqueViolation == pgErr.SQLState() {
+		h.writeErrResponse(w, http.StatusConflict, err.Error())
+		return
+	}
 	switch {
 	case err == nil:
 	case errors.Is(err, models.ErrWalletNotFound):
@@ -113,6 +125,11 @@ func (h *handler) TransferMoney(w http.ResponseWriter, r *http.Request) { //noli
 	ctx := r.Context()
 	sessionInfo := ctx.Value(SessionKey).(models.SessionInfo)
 	err := h.balance.TransferMoney(ctx, sessionInfo.AccountID, transaction)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgerrcode.UniqueViolation == pgErr.SQLState() {
+		h.writeErrResponse(w, http.StatusConflict, err.Error())
+		return
+	}
 	switch {
 	case err == nil:
 	case errors.Is(err, models.ErrWalletNotFound):
@@ -143,6 +160,11 @@ func (h *handler) ReserveMoney(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := h.balance.ReserveMoney(ctx, transaction)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgerrcode.UniqueViolation == pgErr.SQLState() {
+		h.writeErrResponse(w, http.StatusConflict, err.Error())
+		return
+	}
 	switch {
 	case err == nil:
 	case errors.Is(err, models.ErrWalletNotFound):
@@ -198,13 +220,13 @@ func (h *handler) ApplyReservedMoney(w http.ResponseWriter, r *http.Request) {
 func (h *handler) GetWalletTransactions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	sessionInfo := ctx.Value(SessionKey).(models.SessionInfo)
-	from, err := h.parseTime(r.URL.Query().Get("from"), dateTimeFmt1)
+	from, err := h.parseTime(r.URL.Query().Get("from"), dateTimeLayout)
 	if err != nil {
 		h.writeErrResponse(w, http.StatusBadRequest, "Can't parse time")
 		h.log.Info(err)
 		return
 	}
-	to, err := h.parseTime(r.URL.Query().Get("to"), dateTimeFmt1)
+	to, err := h.parseTime(r.URL.Query().Get("to"), dateTimeLayout)
 	if err != nil {
 		h.writeErrResponse(w, http.StatusBadRequest, "Can't parse time")
 		h.log.Info(err)
@@ -280,7 +302,7 @@ func (h *handler) CancelReserve(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) GetReport(w http.ResponseWriter, r *http.Request) {
-	month, err := h.parseTime(r.URL.Query().Get("month"), dateTimeFmt2)
+	month, err := h.parseTime(r.URL.Query().Get("month"), yearMonthLayout)
 	if err != nil {
 		h.writeErrResponse(w, http.StatusBadRequest, "Can't parse time")
 		h.log.Info(err)

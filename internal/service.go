@@ -3,11 +3,9 @@ package internal
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/DANDA322/balance-service/internal/models"
-	"github.com/DANDA322/balance-service/pkg/csv"
 	"github.com/sirupsen/logrus"
 )
 
@@ -52,7 +50,7 @@ func (a *App) WithdrawMoney(ctx context.Context, accountID int, transaction mode
 
 func (a *App) TransferMoney(ctx context.Context, accountID int, transaction models.TransferTransaction) error {
 	if err := a.db.TransferMoney(ctx, accountID, transaction); err != nil {
-		return fmt.Errorf("unable to transfer mony: %w", err)
+		return fmt.Errorf("unable to transfer money: %w", err)
 	}
 	return nil
 }
@@ -95,15 +93,10 @@ func (a *App) CancelReserve(ctx context.Context, transaction models.ReserveTrans
 	return nil
 }
 
-func (a *App) GetReport(ctx context.Context, month time.Time) (*os.File, error) {
+func (a *App) GetReport(ctx context.Context, month time.Time) (map[string]float64, error) {
 	services, err := a.db.GetReport(ctx, month)
 	if err != nil {
 		return nil, fmt.Errorf("unable get data for report: %w", err)
 	}
-	writerCSV := csv.WriterCSV{}
-	file, err := writerCSV.GetReport(services)
-	if err != nil {
-		return nil, fmt.Errorf("unable get report: %w", err)
-	}
-	return file, nil
+	return services, nil
 }

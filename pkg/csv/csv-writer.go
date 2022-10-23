@@ -3,34 +3,22 @@ package csv
 import (
 	"encoding/csv"
 	"fmt"
-	"os"
+	"net/http"
 	"unicode/utf8"
-
-	"github.com/sirupsen/logrus"
 )
 
 type WriterCSV struct {
 }
 
-func (c *WriterCSV) GetReport(data map[string]float64) (*os.File, error) {
-	file, err := os.Create("report.csv")
-	if err != nil {
-		return nil, fmt.Errorf("cannot open CSV file: %w", err)
-	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			logrus.Errorf("err closing file: %v", err)
-		}
-	}()
-
-	writer := csv.NewWriter(file)
+func (c *WriterCSV) WriteReport(w http.ResponseWriter, data map[string]float64) error {
+	writer := csv.NewWriter(w)
 	delimiter, _ := utf8.DecodeRuneInString(";")
 	writer.Comma = delimiter
 
 	row := []string{"ServiceTitle", "Amount"}
-	err = writer.Write(row)
+	err := writer.Write(row)
 	if err != nil {
-		return nil, fmt.Errorf("cannot write to CSV file: %w", err)
+		return fmt.Errorf("cannot write to CSV file: %w", err)
 	}
 
 	for key, value := range data {
@@ -38,10 +26,10 @@ func (c *WriterCSV) GetReport(data map[string]float64) (*os.File, error) {
 		row[1] = fmt.Sprintf("%v", value)
 		err = writer.Write(row)
 		if err != nil {
-			return nil, fmt.Errorf("cannot write to CSV file: %w", err)
+			return fmt.Errorf("cannot write to CSV file: %w", err)
 		}
 	}
 	writer.Flush()
 
-	return file, nil
+	return nil
 }
