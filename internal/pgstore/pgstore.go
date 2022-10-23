@@ -96,8 +96,9 @@ func (db *DB) GetWallet(ctx context.Context, accountID int) (*models.Wallet, err
 
 func (db *DB) UpsertDepositToWallet(ctx context.Context, ownerID int, transaction models.Transaction) error {
 	var err error
+	var tx *sql.Tx
+	var wallet *models.Wallet
 	for i := 0; i < retries; i++ {
-		var tx *sql.Tx
 		tx, err = db.db.BeginTx(ctx, nil)
 		if err != nil {
 			continue
@@ -111,7 +112,6 @@ func (db *DB) UpsertDepositToWallet(ctx context.Context, ownerID int, transactio
 			_ = tx.Rollback()
 			continue
 		}
-		var wallet *models.Wallet
 		wallet, err = db.checkBalance(ctx, tx, ownerID, 0)
 		if err != nil {
 			_ = tx.Rollback()
@@ -134,13 +134,13 @@ func (db *DB) UpsertDepositToWallet(ctx context.Context, ownerID int, transactio
 
 func (db *DB) WithdrawMoneyFromWallet(ctx context.Context, ownerID int, transaction models.Transaction) error {
 	var err error
+	var tx *sql.Tx
+	var wallet *models.Wallet
 	for i := 0; i < retries; i++ {
-		var tx *sql.Tx
 		tx, err = db.db.BeginTx(ctx, nil)
 		if err != nil {
 			continue
 		}
-		var wallet *models.Wallet
 		wallet, err = db.checkBalance(ctx, tx, ownerID, transaction.Amount)
 		if err != nil {
 			_ = tx.Rollback()
@@ -178,13 +178,13 @@ func (db *DB) WithdrawMoneyFromWallet(ctx context.Context, ownerID int, transact
 
 func (db *DB) TransferMoney(ctx context.Context, accountID int, transaction models.TransferTransaction) error {
 	var err error
+	var tx *sql.Tx
+	var wallet *models.Wallet
 	for i := 0; i < retries; i++ {
-		var tx *sql.Tx
 		tx, err = db.db.BeginTx(ctx, nil)
 		if err != nil {
 			continue
 		}
-		var wallet *models.Wallet
 		wallet, err = db.checkBalance(ctx, tx, accountID, transaction.Amount)
 		if err != nil {
 			_ = tx.Rollback()
@@ -218,13 +218,13 @@ func (db *DB) TransferMoney(ctx context.Context, accountID int, transaction mode
 
 func (db *DB) ReserveMoneyFromWallet(ctx context.Context, transaction models.ReserveTransaction) error {
 	var err error
+	var tx *sql.Tx
+	var wallet *models.Wallet
 	for i := 0; i < retries; i++ {
-		var tx *sql.Tx
 		tx, err = db.db.BeginTx(ctx, nil)
 		if err != nil {
 			continue
 		}
-		var wallet *models.Wallet
 		wallet, err = db.checkBalance(ctx, tx, transaction.AccountID, transaction.Amount)
 		if err != nil {
 			_ = tx.Rollback()
@@ -257,13 +257,14 @@ func (db *DB) ReserveMoneyFromWallet(ctx context.Context, transaction models.Res
 
 func (db *DB) ApplyReservedMoney(ctx context.Context, transaction models.ReserveTransaction) error {
 	var err error
+	var tx *sql.Tx
+	var wallet *models.Wallet
+	var serviceTitle string
 	for i := 0; i < retries; i++ {
-		var tx *sql.Tx
 		tx, err = db.db.BeginTx(ctx, nil)
 		if err != nil {
 			continue
 		}
-		var wallet *models.Wallet
 		wallet, err = db.checkReservedBalance(ctx, tx, transaction.AccountID, transaction.Amount)
 		if err != nil {
 			_ = tx.Rollback()
@@ -279,7 +280,6 @@ func (db *DB) ApplyReservedMoney(ctx context.Context, transaction models.Reserve
 			_ = tx.Rollback()
 			continue
 		}
-		var serviceTitle string
 		serviceTitle, err = db.getServiceTitle(ctx, tx, transaction.ServiceID)
 		if err != nil {
 			_ = tx.Rollback()
@@ -303,13 +303,13 @@ func (db *DB) ApplyReservedMoney(ctx context.Context, transaction models.Reserve
 
 func (db *DB) CancelReserve(ctx context.Context, transaction models.ReserveTransaction) error {
 	var err error
+	var tx *sql.Tx
+	var wallet *models.Wallet
 	for i := 0; i < retries; i++ {
-		var tx *sql.Tx
 		tx, err = db.db.BeginTx(ctx, nil)
 		if err != nil {
 			continue
 		}
-		var wallet *models.Wallet
 		wallet, err = db.checkReservedBalance(ctx, tx, transaction.AccountID, transaction.Amount)
 		if err != nil {
 			_ = tx.Rollback()
@@ -343,10 +343,11 @@ func (db *DB) CancelReserve(ctx context.Context, transaction models.ReserveTrans
 func (db *DB) GetWalletTransactions(ctx context.Context, accountID int,
 	queryParams *models.TransactionsQueryParams) ([]models.TransactionFullInfo, error) {
 	var err error
+	var wallet *models.Wallet
+	var transactions []models.TransactionFullInfo
+	var otherTransaction models.TransactionFullInfo
 	for i := 0; i < retries; i++ {
-		var transactions []models.TransactionFullInfo
 		err = func([]models.TransactionFullInfo) error {
-			var wallet *models.Wallet
 			wallet, err = db.GetWallet(ctx, accountID)
 			if err != nil {
 				return err
@@ -363,7 +364,6 @@ func (db *DB) GetWalletTransactions(ctx context.Context, accountID int,
 					db.log.Warnf("err closing rows: %v", err)
 				}
 			}()
-			var otherTransaction models.TransactionFullInfo
 			for rows.Next() {
 				if err = rows.StructScan(&otherTransaction); err != nil {
 					continue
@@ -389,10 +389,11 @@ func (db *DB) GetReport(ctx context.Context, month time.Time) (map[string]float6
 	    updated_at BETWEEN $2 AND $3`
 	status := "Completed"
 	var err error
+	var rows *sqlx.Rows
+	services := make(map[string]float64)
+	var service models.Service
 	for i := 0; i < retries; i++ {
-		services := make(map[string]float64)
 		err = func(map[string]float64) error {
-			var rows *sqlx.Rows
 			rows, err = db.db.QueryxContext(ctx, query, status, month, month.AddDate(0, 1, 0))
 			if err != nil {
 				return err
@@ -402,7 +403,6 @@ func (db *DB) GetReport(ctx context.Context, month time.Time) (map[string]float6
 					db.log.Warnf("err closing rows: %v", err)
 				}
 			}()
-			var service models.Service
 			for rows.Next() {
 				if err = rows.StructScan(&service); err != nil {
 					return err
