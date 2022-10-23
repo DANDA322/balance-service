@@ -99,32 +99,39 @@ func (db *DB) UpsertDepositToWallet(ctx context.Context, ownerID int, transactio
 	var tx *sql.Tx
 	var wallet *models.Wallet
 	for i := 0; i < retries; i++ {
-		tx, err = db.db.BeginTx(ctx, nil)
-		if err != nil {
-			continue
-		}
-		query := `
+		err = func() error {
+			tx, err = db.db.BeginTx(ctx, nil)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err = tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+					db.log.Error("err rolling back deposit transaction")
+				}
+			}()
+			query := `
 	INSERT INTO wallet (owner_id, balance, reserved_balance, created_at, updated_at)
 	VALUES ($1, $2, 0, $3, $3)
 	ON CONFLICT (owner_id) DO UPDATE SET balance = wallet.balance + excluded.balance,
 										updated_at = excluded.updated_at`
-		if _, err = tx.ExecContext(ctx, query, ownerID, transaction.Amount, time.Now().UTC().Format(dateTimeLayout)); err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		wallet, err = db.checkBalance(ctx, tx, ownerID, 0)
+			if _, err = tx.ExecContext(ctx, query, ownerID, transaction.Amount, time.Now().UTC().Format(dateTimeLayout)); err != nil {
+				return fmt.Errorf("err executing [UpsertDepositToWallet]: %w", err)
+			}
+			wallet, err = db.checkBalance(ctx, tx, ownerID, 0)
+			if err != nil {
+				return fmt.Errorf("err executing [UpsertDepositToWallet]: %w", err)
+			}
+			if err = db.insertTransaction(ctx, tx, transaction.IdempotenceKey, wallet.ID, nil, transaction.Amount,
+				nil, transaction.Comment); err != nil {
+				return fmt.Errorf("err executing [UpsertDepositToWallet]: %w", err)
+			}
+			err = tx.Commit()
+			if err != nil {
+				return fmt.Errorf("err committing the transaction: %w", err)
+			}
+			return nil
+		}()
 		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		if err = db.insertTransaction(ctx, tx, transaction.IdempotenceKey, wallet.ID, nil, transaction.Amount,
-			nil, transaction.Comment); err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = tx.Commit()
-		if err != nil {
-			_ = tx.Rollback()
 			continue
 		}
 		return nil
@@ -137,38 +144,45 @@ func (db *DB) WithdrawMoneyFromWallet(ctx context.Context, ownerID int, transact
 	var tx *sql.Tx
 	var wallet *models.Wallet
 	for i := 0; i < retries; i++ {
-		tx, err = db.db.BeginTx(ctx, nil)
-		if err != nil {
-			continue
-		}
-		wallet, err = db.checkBalance(ctx, tx, ownerID, transaction.Amount)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		query := `
+		err = func() error {
+			tx, err = db.db.BeginTx(ctx, nil)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err = tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+					db.log.Error("err rolling back deposit transaction")
+				}
+			}()
+			wallet, err = db.checkBalance(ctx, tx, ownerID, transaction.Amount)
+			if err != nil {
+				return fmt.Errorf("err executing [WithdrawMoneyFromWallet]: %w", err)
+			}
+			query := `
 	UPDATE wallet 
 	SET balance = balance - $1,
 	updated_at = $3
 	WHERE owner_id = $2`
-		var result sql.Result
-		result, err = tx.ExecContext(ctx, query, transaction.Amount, ownerID, time.Now().UTC().Format(dateTimeLayout))
+			var result sql.Result
+			result, err = tx.ExecContext(ctx, query, transaction.Amount, ownerID, time.Now().UTC().Format(dateTimeLayout))
+			if err != nil {
+				return fmt.Errorf("err executing [WithdrawMoneyFromWallet]: %w", err)
+			}
+			if count, _ := result.RowsAffected(); count == 0 {
+				return models.ErrWalletNotFound
+			}
+			transaction.Amount *= -1
+			if err = db.insertTransaction(ctx, tx, transaction.IdempotenceKey, wallet.ID, nil, transaction.Amount,
+				nil, transaction.Comment); err != nil {
+				return fmt.Errorf("err executing [WithdrawMoneyFromWallet]: %w", err)
+			}
+			err = tx.Commit()
+			if err != nil {
+				return fmt.Errorf("err committing the transaction: %w", err)
+			}
+			return nil
+		}()
 		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		if count, _ := result.RowsAffected(); count == 0 {
-			return models.ErrWalletNotFound
-		}
-		transaction.Amount *= -1
-		if err = db.insertTransaction(ctx, tx, transaction.IdempotenceKey, wallet.ID, nil, transaction.Amount,
-			nil, transaction.Comment); err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = tx.Commit()
-		if err != nil {
-			_ = tx.Rollback()
 			continue
 		}
 		return nil
@@ -181,34 +195,40 @@ func (db *DB) TransferMoney(ctx context.Context, accountID int, transaction mode
 	var tx *sql.Tx
 	var wallet *models.Wallet
 	for i := 0; i < retries; i++ {
-		tx, err = db.db.BeginTx(ctx, nil)
+		err = func() error {
+			tx, err = db.db.BeginTx(ctx, nil)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err = tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+					db.log.Error("err rolling back transfer transaction")
+				}
+			}()
+			wallet, err = db.checkBalance(ctx, tx, accountID, transaction.Amount)
+			if err != nil {
+				return fmt.Errorf("err executing [TransferMoney]: %w", err)
+			}
+			err = db.withdrawMoney(ctx, tx, wallet.ID, transaction.Amount)
+			if err != nil {
+				return fmt.Errorf("err executing [TransferMoney]: %w", err)
+			}
+			err = db.depositMoney(ctx, tx, transaction.Target, transaction.Amount)
+			if err != nil {
+				return fmt.Errorf("err executing [TransferMoney]: %w", err)
+			}
+			err = db.insertTransaction(ctx, tx, transaction.IdempotenceKey, wallet.ID, &transaction.Target, transaction.Amount,
+				nil, transaction.Comment)
+			if err != nil {
+				return fmt.Errorf("err executing [TransferMoney]: %w", err)
+			}
+			err = tx.Commit()
+			if err != nil {
+				return fmt.Errorf("err committing the transaction: %w", err)
+			}
+			return nil
+		}()
 		if err != nil {
-			continue
-		}
-		wallet, err = db.checkBalance(ctx, tx, accountID, transaction.Amount)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = db.withdrawMoney(ctx, tx, wallet.ID, transaction.Amount)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = db.depositMoney(ctx, tx, transaction.Target, transaction.Amount)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = db.insertTransaction(ctx, tx, transaction.IdempotenceKey, wallet.ID, &transaction.Target, transaction.Amount,
-			nil, transaction.Comment)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = tx.Commit()
-		if err != nil {
-			_ = tx.Rollback()
 			continue
 		}
 		return nil
@@ -221,33 +241,39 @@ func (db *DB) ReserveMoneyFromWallet(ctx context.Context, transaction models.Res
 	var tx *sql.Tx
 	var wallet *models.Wallet
 	for i := 0; i < retries; i++ {
-		tx, err = db.db.BeginTx(ctx, nil)
+		err = func() error {
+			tx, err = db.db.BeginTx(ctx, nil)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err = tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+					db.log.Error("err rolling back reserve transaction")
+				}
+			}()
+			wallet, err = db.checkBalance(ctx, tx, transaction.AccountID, transaction.Amount)
+			if err != nil {
+				return fmt.Errorf("err executing [ReserveMoneyFromWallet]: %w", err)
+			}
+			err = db.withdrawMoney(ctx, tx, wallet.ID, transaction.Amount)
+			if err != nil {
+				return fmt.Errorf("err executing [ReserveMoneyFromWallet]: %w", err)
+			}
+			err = db.reserveMoney(ctx, tx, wallet.ID, transaction.Amount)
+			if err != nil {
+				return fmt.Errorf("err executing [ReserveMoneyFromWallet]: %w", err)
+			}
+			err = db.insertReservedFunds(ctx, tx, transaction.AccountID, transaction)
+			if err != nil {
+				return fmt.Errorf("err executing [ReserveMoneyFromWallet]: %w", err)
+			}
+			err = tx.Commit()
+			if err != nil {
+				return fmt.Errorf("err committing the transaction: %w", err)
+			}
+			return nil
+		}()
 		if err != nil {
-			continue
-		}
-		wallet, err = db.checkBalance(ctx, tx, transaction.AccountID, transaction.Amount)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = db.withdrawMoney(ctx, tx, wallet.ID, transaction.Amount)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = db.reserveMoney(ctx, tx, wallet.ID, transaction.Amount)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = db.insertReservedFunds(ctx, tx, transaction.AccountID, transaction)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = tx.Commit()
-		if err != nil {
-			_ = tx.Rollback()
 			continue
 		}
 		return nil
@@ -261,39 +287,44 @@ func (db *DB) ApplyReservedMoney(ctx context.Context, transaction models.Reserve
 	var wallet *models.Wallet
 	var serviceTitle string
 	for i := 0; i < retries; i++ {
-		tx, err = db.db.BeginTx(ctx, nil)
+		err = func() error {
+			tx, err = db.db.BeginTx(ctx, nil)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err = tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+					db.log.Error("err rolling back apply transaction")
+				}
+			}()
+			wallet, err = db.checkReservedBalance(ctx, tx, transaction.AccountID, transaction.Amount)
+			if err != nil {
+				return fmt.Errorf("err executing [ApplyReservedMoney]: %w", err)
+			}
+			err = db.withdrawReservedMoney(ctx, tx, wallet.ID, transaction.Amount)
+			if err != nil {
+				return fmt.Errorf("err executing [ApplyReservedMoney]: %w", err)
+			}
+			err = db.updateOrderStatus(ctx, tx, transaction.AccountID, "Completed", transaction)
+			if err != nil {
+				return fmt.Errorf("err executing [ApplyReservedMoney]: %w", err)
+			}
+			serviceTitle, err = db.getServiceTitle(ctx, tx, transaction.ServiceID)
+			if err != nil {
+				return fmt.Errorf("err executing [ApplyReservedMoney]: %w", err)
+			}
+			err = db.insertTransaction(ctx, tx, transaction.OrderID, wallet.ID, nil, transaction.Amount,
+				&transaction.ServiceID, serviceTitle)
+			if err != nil {
+				return fmt.Errorf("err executing [ApplyReservedMoney]: %w", err)
+			}
+			err = tx.Commit()
+			if err != nil {
+				return fmt.Errorf("err committing the transaction: %w", err)
+			}
+			return nil
+		}()
 		if err != nil {
-			continue
-		}
-		wallet, err = db.checkReservedBalance(ctx, tx, transaction.AccountID, transaction.Amount)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = db.withdrawReservedMoney(ctx, tx, wallet.ID, transaction.Amount)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = db.updateOrderStatus(ctx, tx, transaction.AccountID, "Completed", transaction)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		serviceTitle, err = db.getServiceTitle(ctx, tx, transaction.ServiceID)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = db.insertTransaction(ctx, tx, transaction.OrderID, wallet.ID, nil, transaction.Amount,
-			&transaction.ServiceID, serviceTitle)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = tx.Commit()
-		if err != nil {
-			_ = tx.Rollback()
 			continue
 		}
 		return nil
@@ -306,33 +337,39 @@ func (db *DB) CancelReserve(ctx context.Context, transaction models.ReserveTrans
 	var tx *sql.Tx
 	var wallet *models.Wallet
 	for i := 0; i < retries; i++ {
-		tx, err = db.db.BeginTx(ctx, nil)
+		err = func() error {
+			tx, err = db.db.BeginTx(ctx, nil)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if err = tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+					db.log.Error("err rolling back cancel transaction")
+				}
+			}()
+			wallet, err = db.checkReservedBalance(ctx, tx, transaction.AccountID, transaction.Amount)
+			if err != nil {
+				return fmt.Errorf("err executing [CancelReserve]: %w", err)
+			}
+			err = db.withdrawReservedMoney(ctx, tx, wallet.ID, transaction.Amount)
+			if err != nil {
+				return fmt.Errorf("err executing [CancelReserve]: %w", err)
+			}
+			err = db.depositMoney(ctx, tx, transaction.AccountID, transaction.Amount)
+			if err != nil {
+				return fmt.Errorf("err executing [CancelReserve]: %w", err)
+			}
+			err = db.updateOrderStatus(ctx, tx, transaction.AccountID, "Cancelled", transaction)
+			if err != nil {
+				return fmt.Errorf("err executing [CancelReserve]: %w", err)
+			}
+			err = tx.Commit()
+			if err != nil {
+				return fmt.Errorf("err committing the transaction: %w", err)
+			}
+			return nil
+		}()
 		if err != nil {
-			continue
-		}
-		wallet, err = db.checkReservedBalance(ctx, tx, transaction.AccountID, transaction.Amount)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = db.withdrawReservedMoney(ctx, tx, wallet.ID, transaction.Amount)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = db.depositMoney(ctx, tx, transaction.AccountID, transaction.Amount)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = db.updateOrderStatus(ctx, tx, transaction.AccountID, "Cancelled", transaction)
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		err = tx.Commit()
-		if err != nil {
-			_ = tx.Rollback()
 			continue
 		}
 		return nil
@@ -350,14 +387,14 @@ func (db *DB) GetWalletTransactions(ctx context.Context, accountID int,
 		err = func([]models.TransactionFullInfo) error {
 			wallet, err = db.GetWallet(ctx, accountID)
 			if err != nil {
-				return err
+				return fmt.Errorf("err executing [GetWalletTransactions]: %w", err)
 			}
 			query := db.queryBuilder(queryParams.Sorting, queryParams.Descending)
 			var rows *sqlx.Rows
 			rows, err = db.db.QueryxContext(ctx, query, wallet.ID, queryParams.From, queryParams.To,
 				queryParams.Limit, queryParams.Offset)
 			if err != nil {
-				return err
+				return fmt.Errorf("err executing [GetWalletTransactions]: %w", err)
 			}
 			defer func() {
 				if err = rows.Close(); err != nil {
@@ -396,7 +433,7 @@ func (db *DB) GetReport(ctx context.Context, month time.Time) (map[string]float6
 		err = func(map[string]float64) error {
 			rows, err = db.db.QueryxContext(ctx, query, status, month, month.AddDate(0, 1, 0))
 			if err != nil {
-				return err
+				return fmt.Errorf("err executing [GetReport]: %w", err)
 			}
 			defer func() {
 				if err = rows.Close(); err != nil {
